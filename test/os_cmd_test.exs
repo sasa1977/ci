@@ -1,5 +1,5 @@
 defmodule OsCmdTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   test "returns error on invalid program" do
     assert {:error, error} = OsCmd.start_link("unknown_program")
@@ -13,9 +13,9 @@ defmodule OsCmdTest do
   end
 
   test "stops the process after the command finishes" do
+    Process.flag(:trap_exit, true)
     {:ok, pid} = OsCmd.start_link("echo 1")
-    mref = Process.monitor(pid)
-    assert_receive {:DOWN, ^mref, :process, ^pid, :normal}
+    assert_receive {:EXIT, ^pid, :normal}
   end
 
   test "sends notifications when configured" do
@@ -36,15 +36,14 @@ defmodule OsCmdTest do
   end
 
   test "executes the specified terminate command" do
+    Process.flag(:trap_exit, true)
     {:ok, pid1} = OsCmd.start_link("sleep infinity")
-    Process.monitor(pid1)
-
     {:ok, pid2} = OsCmd.start_link({"sleep infinity", terminate_cmd: "killall sleep"})
-    Process.monitor(pid2)
 
     OsCmd.stop(pid2)
-    assert_receive {:DOWN, _, :process, ^pid1, :normal}
-    assert_receive {:DOWN, _, :process, ^pid2, :normal}
+
+    assert_receive {:EXIT, ^pid1, :normal}
+    assert_receive {:EXIT, ^pid2, :normal}
   end
 
   test "terminates the program on stop" do
@@ -105,5 +104,19 @@ defmodule OsCmdTest do
     Process.flag(:trap_exit, true)
     {:ok, pid} = OsCmd.start_link({"sleep infinity", timeout: 1})
     assert_receive {:EXIT, ^pid, :normal}
+  end
+
+  @tag capture_log: true
+  test "propagates exit reason" do
+    Process.flag(:trap_exit, true)
+
+    {:ok, pid} = OsCmd.start_link({~s/bash -c "exit 0"/, propagate_exit?: true})
+    assert_receive {:EXIT, ^pid, :normal}
+
+    {:ok, pid} = OsCmd.start_link({~s/bash -c "exit 1"/, propagate_exit?: true})
+    assert_receive {:EXIT, ^pid, {:failed, 1}}
+
+    {:ok, pid} = OsCmd.start_link({~s/sleep infinity/, propagate_exit?: true, timeout: 1})
+    assert_receive {:EXIT, ^pid, :timeout}
   end
 end

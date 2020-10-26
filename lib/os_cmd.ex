@@ -2,7 +2,7 @@ defmodule OsCmd do
   use GenServer
 
   defmodule Error do
-    defexception [:message, :exit_code]
+    defexception [:message, :exit_status]
   end
 
   def start_link(command) when is_binary(command), do: start_link({command, []})
@@ -30,15 +30,24 @@ defmodule OsCmd do
          do: Process.send_after(self(), :timeout, timeout)
 
     case open_port(args, opts) do
-      {:ok, port} -> {:ok, %{port: port, notify: Keyword.get(opts, :notify)}}
-      {:error, reason} -> {:stop, reason}
+      {:ok, port} ->
+        {:ok,
+         %{
+           port: port,
+           notify: Keyword.get(opts, :notify),
+           propagate_exit?: Keyword.get(opts, :propagate_exit?, false)
+         }}
+
+      {:error, reason} ->
+        {:stop, reason}
     end
   end
 
   @impl GenServer
   def handle_info({port, {:exit_status, exit_status}}, %{port: port} = state) do
     if not is_nil(state.notify), do: send(state.notify, {self(), {:stopped, exit_status}})
-    {:stop, :normal, %{state | port: nil}}
+    exit_reason = if exit_status == 0, do: :normal, else: {:failed, exit_status}
+    stop_server(%{state | port: nil}, exit_reason)
   end
 
   def handle_info({port, {:data, message}}, %{port: port} = state) do
@@ -46,12 +55,14 @@ defmodule OsCmd do
     {:noreply, state}
   end
 
-  def handle_info(:timeout, state),
-    do: {:stop, :normal, state}
+  def handle_info(:timeout, state), do: stop_server(state, :timeout)
 
   @impl GenServer
   def terminate(_reason, %{port: nil}), do: :ok
   def terminate(_reason, %{port: port}), do: stop_program(port)
+
+  defp stop_server(%{propagate_exit?: false} = state, _exit_reason), do: {:stop, :normal, state}
+  defp stop_server(state, reason), do: {:stop, reason, state}
 
   defp open_port(args, opts) do
     with {:ok, port_executable} <- port_executable() do
@@ -71,7 +82,7 @@ defmodule OsCmd do
           Port.close(port)
           {:error, %Error{message: error}}
 
-        {^port, {:exit_status, _exit_code}} ->
+        {^port, {:exit_status, _exit_status}} ->
           exit("unexpected port exit")
       end
     end
@@ -101,7 +112,7 @@ defmodule OsCmd do
     Port.command(port, "stop")
 
     receive do
-      {^port, {:exit_status, _exit_code}} -> :ok
+      {^port, {:exit_status, _exit_status}} -> :ok
     end
   end
 

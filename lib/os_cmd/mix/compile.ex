@@ -18,7 +18,7 @@ defmodule Mix.Tasks.Compile.OsCmd do
       {_, 0} ->
         {:ok, []}
 
-      {output, _exit_code} ->
+      {output, _exit_status} ->
         error = %Mix.Task.Compiler.Diagnostic{
           compiler_name: "os_cmd",
           details: nil,
