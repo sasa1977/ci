@@ -202,6 +202,33 @@ defmodule OsCmdTest do
     end
   end
 
+  describe "run" do
+    test "returns output if the program succeeds" do
+      assert OsCmd.run(~s/bash -c "echo 1; echo 2 >&2; echo 3"/) == {:ok, "1\n2\n3\n"}
+    end
+
+    test "returns error if the program fails" do
+      assert OsCmd.run(~s/bash -c "echo 1; exit 2"/) == {:error, 2, "1\n"}
+    end
+
+    test "returns error if the owner terminates" do
+      Process.flag(:trap_exit, true)
+
+      task =
+        Task.async(fn ->
+          Process.flag(:trap_exit, true)
+          OsCmd.run("sleep infinity")
+        end)
+
+      Process.sleep(100)
+      {:links, links} = Process.info(task.pid, :links)
+      [cmd_pid] = links -- [self()]
+      Process.exit(cmd_pid, :kill)
+
+      assert Task.await(task) == {:error, :killed, ""}
+    end
+  end
+
   defp start_cmd(command, opts \\ []) do
     opts = Keyword.merge([notify: self()], opts)
     OsCmd.start_link({command, opts})

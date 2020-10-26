@@ -24,8 +24,17 @@ defmodule OsCmd do
     end
   end
 
-  def stop(server, reason \\ :normal, timeout \\ :infinity),
-    do: GenServer.stop(server, reason, timeout)
+  def stop(server, timeout \\ :infinity) do
+    pid = GenServer.whereis(server)
+    mref = Process.monitor(pid)
+    GenServer.cast(pid, :stop)
+
+    receive do
+      {:DOWN, ^mref, :process, ^pid, _reason} -> :ok
+    after
+      timeout -> exit(:timeout)
+    end
+  end
 
   def events(server) do
     Stream.resource(
@@ -52,6 +61,29 @@ defmodule OsCmd do
         mref -> Process.demonitor(mref, [:flush])
       end
     )
+  end
+
+  def run(cmd, opts \\ []) do
+    with {:ok, pid} <- start_link({cmd, [notify: self()] ++ opts}) do
+      try do
+        pid
+        |> events()
+        |> Enum.reduce(
+          %{output: [], exit_status: nil},
+          fn
+            {:output, output}, acc -> update_in(acc.output, &[&1, output])
+            {:stopped, exit_status}, acc -> %{acc | exit_status: exit_status}
+            {:terminated, reason}, acc -> %{acc | exit_status: reason}
+          end
+        )
+        |> case do
+          %{exit_status: 0} = result -> {:ok, to_string(result.output)}
+          result -> {:error, result.exit_status, to_string(result.output)}
+        end
+      after
+        stop(pid)
+      end
+    end
   end
 
   @impl GenServer
@@ -94,6 +126,9 @@ defmodule OsCmd do
     exit_reason = if exit_status == 0, do: :normal, else: {:failed, exit_status}
     stop_server(%{state | port: nil}, exit_reason)
   end
+
+  @impl GenServer
+  def handle_cast(:stop, state), do: stop_server(state, :normal)
 
   @impl GenServer
   def terminate(_reason, %{port: nil}), do: :ok
