@@ -2,43 +2,43 @@ defmodule OsCmdTest do
   use ExUnit.Case, async: false
 
   test "returns error on invalid program" do
-    assert {:error, error} = OsCmd.start_link("unknown_program")
+    assert {:error, error} = start_cmd("unknown_program")
     assert error.message =~ "executable file not found"
   end
 
   test "returns error on invalid directory" do
     Process.flag(:trap_exit, true)
-    assert {:error, error} = OsCmd.start_link({"echo 1", cd: "/unknown/directory"})
+    assert {:error, error} = start_cmd("echo 1", cd: "/unknown/directory")
     assert error.message =~ "no such file or directory"
   end
 
   test "stops the process after the command finishes" do
     Process.flag(:trap_exit, true)
-    {:ok, pid} = OsCmd.start_link("echo 1")
+    pid = start_cmd!("echo 1")
     assert_receive {:EXIT, ^pid, :normal}
   end
 
   test "sends notifications when configured" do
-    {:ok, pid} = OsCmd.start_link({"echo 1", notify: self()})
+    pid = start_cmd!("echo 1", notify: self())
     assert_receive {^pid, {:output, "1\n"}}
     assert_receive {^pid, {:stopped, 0}}
   end
 
   test "returns the correct exit code" do
-    {:ok, pid} = OsCmd.start_link({~s/bash -c "exit 42"/, notify: self()})
+    pid = start_cmd!(~s/bash -c "exit 42"/, notify: self())
     assert_receive {^pid, {:stopped, 42}}
   end
 
   test "sets the correct folder" do
-    {:ok, pid} = OsCmd.start_link({"pwd", notify: self(), cd: "test"})
+    pid = start_cmd!("pwd", notify: self(), cd: "test")
     assert_receive {^pid, {:output, output}}
     assert output |> String.trim_trailing() |> Path.relative_to_cwd() == "test"
   end
 
   test "executes the specified terminate command" do
     Process.flag(:trap_exit, true)
-    {:ok, pid1} = OsCmd.start_link("sleep infinity")
-    {:ok, pid2} = OsCmd.start_link({"sleep infinity", terminate_cmd: "killall sleep"})
+    pid1 = start_cmd!("sleep infinity")
+    pid2 = start_cmd!("sleep infinity", terminate_cmd: "killall sleep")
 
     OsCmd.stop(pid2)
 
@@ -49,8 +49,8 @@ defmodule OsCmdTest do
   test "terminates the program on stop" do
     on_exit(fn -> File.rm("test.txt") end)
 
-    {:ok, pid} =
-      OsCmd.start_link("""
+    pid =
+      start_cmd!("""
       bash -c "
         while true; do
           echo 1 >> test.txt
@@ -74,8 +74,8 @@ defmodule OsCmdTest do
 
     {:ok, owner_pid} =
       Agent.start_link(fn ->
-        {:ok, cmd_pid} =
-          OsCmd.start_link("""
+        cmd_pid =
+          start_cmd!("""
           bash -c "
             while true; do
               echo 1 >> test.txt
@@ -102,7 +102,7 @@ defmodule OsCmdTest do
 
   test "terminates the program if it doesn't complete in the given time" do
     Process.flag(:trap_exit, true)
-    {:ok, pid} = OsCmd.start_link({"sleep infinity", timeout: 1})
+    pid = start_cmd!("sleep infinity", timeout: 1)
     assert_receive {:EXIT, ^pid, :normal}
   end
 
@@ -110,13 +110,42 @@ defmodule OsCmdTest do
   test "propagates exit reason" do
     Process.flag(:trap_exit, true)
 
-    {:ok, pid} = OsCmd.start_link({~s/bash -c "exit 0"/, propagate_exit?: true})
+    pid = start_cmd!(~s/bash -c "exit 0"/, propagate_exit?: true)
     assert_receive {:EXIT, ^pid, :normal}
 
-    {:ok, pid} = OsCmd.start_link({~s/bash -c "exit 1"/, propagate_exit?: true})
+    pid = start_cmd!(~s/bash -c "exit 1"/, propagate_exit?: true)
     assert_receive {:EXIT, ^pid, {:failed, 1}}
 
-    {:ok, pid} = OsCmd.start_link({~s/sleep infinity/, propagate_exit?: true, timeout: 1})
+    pid = start_cmd!(~s/sleep infinity/, propagate_exit?: true, timeout: 1)
     assert_receive {:EXIT, ^pid, :timeout}
+  end
+
+  test "notifies all processes and invokes the custom handler" do
+    Process.flag(:trap_exit, true)
+
+    output =
+      ExUnit.CaptureIO.capture_io(fn ->
+        pid = start_cmd!("echo 1", notify: self(), notify: self(), handler: &IO.inspect/1)
+        assert_receive {^pid, {:output, "1\n"}}
+        assert_receive {^pid, {:output, "1\n"}}
+
+        assert_receive {^pid, {:stopped, 0}}
+        assert_receive {^pid, {:stopped, 0}}
+
+        # prevents a crash in the cmd process due to race condition with captureio
+        assert_receive {:EXIT, ^pid, _}
+      end)
+
+    assert output =~ ~s/{:output, "1\\n"/
+  end
+
+  defp start_cmd(command, opts \\ []) do
+    opts = Keyword.merge([notify: self()], opts)
+    OsCmd.start_link({command, opts})
+  end
+
+  defp start_cmd!(command, opts \\ []) do
+    {:ok, pid} = start_cmd(command, opts)
+    pid
   end
 end

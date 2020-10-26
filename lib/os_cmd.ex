@@ -11,9 +11,14 @@ defmodule OsCmd do
     with {:ok, args} <- parse_command(command),
          {terminate_cmd, opts} = Keyword.pop(opts, :terminate_cmd, ""),
          {:ok, terminate_cmd_parts} <- parse_command(terminate_cmd) do
+      args =
+        args(opts) ++ Enum.flat_map(terminate_cmd_parts, &["-terminate-cmd-part", &1]) ++ args
+
+      opts = normalize_opts(opts)
+
       GenServer.start_link(
         __MODULE__,
-        {Enum.flat_map(terminate_cmd_parts, &["-terminate-cmd-part", &1]) ++ args, opts},
+        {args, opts},
         Keyword.take(opts, [:name])
       )
     end
@@ -29,12 +34,12 @@ defmodule OsCmd do
     with {:ok, timeout} <- Keyword.fetch(opts, :timeout),
          do: Process.send_after(self(), :timeout, timeout)
 
-    case open_port(args, opts) do
+    case open_port(args) do
       {:ok, port} ->
         {:ok,
          %{
            port: port,
-           notify: Keyword.get(opts, :notify),
+           handler: Keyword.get(opts, :handler),
            propagate_exit?: Keyword.get(opts, :propagate_exit?, false)
          }}
 
@@ -44,34 +49,74 @@ defmodule OsCmd do
   end
 
   @impl GenServer
-  def handle_info({port, {:exit_status, exit_status}}, %{port: port} = state) do
-    if not is_nil(state.notify), do: send(state.notify, {self(), {:stopped, exit_status}})
-    exit_reason = if exit_status == 0, do: :normal, else: {:failed, exit_status}
-    stop_server(%{state | port: nil}, exit_reason)
-  end
+  def handle_info({port, {:exit_status, exit_status}}, %{port: port} = state),
+    # Delegating to `handle_continue` because we must invoke a custom handler which can crash, so
+    # we need to make sure that the correct state is committed.
+    do: {:noreply, %{state | port: nil}, {:continue, {:stop, exit_status}}}
 
   def handle_info({port, {:data, message}}, %{port: port} = state) do
-    if not is_nil(state.notify), do: send(state.notify, {self(), :erlang.binary_to_term(message)})
+    invoke_handler(state, message)
     {:noreply, state}
   end
 
   def handle_info(:timeout, state), do: stop_server(state, :timeout)
 
   @impl GenServer
+  def handle_continue({:stop, exit_status}, state) do
+    invoke_handler(state, {:stopped, exit_status})
+    exit_reason = if exit_status == 0, do: :normal, else: {:failed, exit_status}
+    stop_server(%{state | port: nil}, exit_reason)
+  end
+
+  @impl GenServer
   def terminate(_reason, %{port: nil}), do: :ok
   def terminate(_reason, %{port: port}), do: stop_program(port)
+
+  defp args(opts) do
+    Enum.flat_map(
+      opts,
+      fn
+        {:cd, dir} -> ["-dir", dir]
+        _other -> []
+      end
+    )
+  end
+
+  defp normalize_opts(opts) do
+    handler =
+      opts
+      |> Keyword.get_values(:notify)
+      |> Enum.reduce(
+        Keyword.get(opts, :handler),
+        fn pid, handler ->
+          fn message ->
+            send(pid, {self(), message})
+            handler && handler.(message)
+          end
+        end
+      )
+
+    Keyword.put(opts, :handler, handler)
+  end
 
   defp stop_server(%{propagate_exit?: false} = state, _exit_reason), do: {:stop, :normal, state}
   defp stop_server(state, reason), do: {:stop, reason, state}
 
-  defp open_port(args, opts) do
+  defp invoke_handler(%{handler: nil}, _message), do: :ok
+
+  defp invoke_handler(%{handler: handler}, message) do
+    message = with message when is_binary(message) <- message, do: :erlang.binary_to_term(message)
+    handler.(message)
+  end
+
+  defp open_port(args) do
     with {:ok, port_executable} <- port_executable() do
       port =
         Port.open({:spawn_executable, port_executable}, [
           :exit_status,
           :binary,
           packet: 4,
-          args: args(opts) ++ args
+          args: args
         ])
 
       receive do
@@ -86,16 +131,6 @@ defmodule OsCmd do
           exit("unexpected port exit")
       end
     end
-  end
-
-  defp args(opts) do
-    Enum.flat_map(
-      opts,
-      fn
-        {:cd, dir} -> ["-dir", dir]
-        _other -> []
-      end
-    )
   end
 
   defp port_executable do
