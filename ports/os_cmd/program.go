@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"syscall"
 	"time"
 )
@@ -65,33 +66,63 @@ func (program *program) awaitCommand() {
 }
 
 func (program *program) stop() {
-	if len(program.terminateCmdParts) > 0 {
-		terminateCmd := exec.Command(program.terminateCmdParts[0], program.terminateCmdParts[1:]...)
-		terminateCmd.Dir = program.cmd.Dir
-
-		var buf bytes.Buffer
-		terminateCmd.Stdout = &buf
-		terminateCmd.Stderr = &buf
-
-		err := terminateCmd.Start()
-		if err == nil {
-			select {
-			case exit := <-program.exitStatus:
-				terminateCmd.Wait()
-				sendOutput(buf.Bytes())
-				os.Exit(exit)
-
-			case <-time.After(5 * time.Second):
-				sendOutput(buf.Bytes())
-				terminateCmd.Process.Kill()
-			}
-		} else {
-			sendOutput([]byte(fmt.Sprintf("%s", err)))
-		}
+	exitStatus, err := program.politeTerminate()
+	if err == nil {
+		os.Exit(exitStatus)
 	}
 
-	// we end up here if terminate command doesn't exist or it failed to kill the process
 	program.cmd.Process.Kill()
-	exit := <-program.exitStatus
-	os.Exit(exit)
+	exitStatus = <-program.exitStatus
+	os.Exit(exitStatus)
+}
+
+func (program *program) politeTerminate() (int, error) {
+	if len(program.terminateCmdParts) > 0 {
+		return program.invokeCustomTerminateCmd()
+	}
+
+	var signal syscall.Signal
+	if runtime.GOOS == "windows" {
+		signal = syscall.SIGKILL
+	} else {
+		signal = syscall.SIGTERM
+	}
+
+	err := program.cmd.Process.Signal(signal)
+	if err != nil {
+		return -1, err
+	}
+
+	return program.awaitTermination()
+}
+
+func (program *program) invokeCustomTerminateCmd() (int, error) {
+	terminateCmd := exec.Command(program.terminateCmdParts[0], program.terminateCmdParts[1:]...)
+	terminateCmd.Dir = program.cmd.Dir
+
+	var buf bytes.Buffer
+	terminateCmd.Stdout = &buf
+	terminateCmd.Stderr = &buf
+
+	err := terminateCmd.Start()
+	if err != nil {
+		return -1, err
+	}
+
+	go func() {
+		terminateCmd.Wait()
+		sendOutput(buf.Bytes())
+	}()
+
+	return program.awaitTermination()
+}
+
+func (program *program) awaitTermination() (int, error) {
+	select {
+	case exit := <-program.exitStatus:
+		return exit, nil
+
+	case <-time.After(5 * time.Second):
+		return -1, fmt.Errorf("timeout")
+	}
 }
