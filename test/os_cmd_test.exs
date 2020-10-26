@@ -1,6 +1,17 @@
 defmodule OsCmdTest do
   use ExUnit.Case, async: true
 
+  test "returns error on invalid program" do
+    assert {:error, error} = OsCmd.start_link("unknown_program")
+    assert error.message =~ "executable file not found"
+  end
+
+  test "returns error on invalid directory" do
+    Process.flag(:trap_exit, true)
+    assert {:error, error} = OsCmd.start_link({"echo 1", cd: "/unknown/directory"})
+    assert error.message =~ "no such file or directory"
+  end
+
   test "stops the process after the command finishes" do
     {:ok, pid} = OsCmd.start_link("echo 1")
     mref = Process.monitor(pid)
@@ -24,7 +35,7 @@ defmodule OsCmdTest do
     assert output |> String.trim_trailing() |> Path.relative_to_cwd() == "test"
   end
 
-  test "executes the specified kill command" do
+  test "executes the specified terminate command" do
     {:ok, pid1} = OsCmd.start_link("sleep infinity")
     Process.monitor(pid1)
 
