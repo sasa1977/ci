@@ -27,6 +27,33 @@ defmodule OsCmd do
   def stop(server, reason \\ :normal, timeout \\ :infinity),
     do: GenServer.stop(server, reason, timeout)
 
+  def events(server) do
+    Stream.resource(
+      fn -> Process.monitor(server) end,
+      fn
+        nil ->
+          {:halt, nil}
+
+        mref ->
+          receive do
+            {^server, {:stopped, _} = stopped} ->
+              Process.demonitor(mref, [:flush])
+              {[stopped], nil}
+
+            {^server, message} ->
+              {[message], mref}
+
+            {:DOWN, ^mref, :process, ^server, reason} ->
+              {[{:terminated, reason}], nil}
+          end
+      end,
+      fn
+        nil -> :ok
+        mref -> Process.demonitor(mref, [:flush])
+      end
+    )
+  end
+
   @impl GenServer
   def init({args, opts}) do
     Process.flag(:trap_exit, true)
