@@ -3,18 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"io"
-	"os"
 )
-
-func sendOutput(output []byte) {
-	writePacket(os.Stdout, erlangTermBytes(tuple(atom("output"), erlangBinary{output})))
-}
-
-func writePacket(w io.Writer, bytes []byte) {
-	binary.Write(w, binary.BigEndian, int32(len(bytes)))
-	binary.Write(w, binary.BigEndian, bytes)
-}
 
 type erlangTerm interface {
 	writeBytes(buf *bytes.Buffer)
