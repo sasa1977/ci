@@ -6,14 +6,28 @@ import (
 	"os"
 )
 
+type arrayFlags []string
+
+func (arrayFlags *arrayFlags) String() string {
+	strings := []string(*arrayFlags)
+	return fmt.Sprintf("%v", strings)
+}
+
+func (arrayFlags *arrayFlags) Set(value string) error {
+	*arrayFlags = append(*arrayFlags, value)
+	return nil
+}
+
 func main() {
 	dir := flag.String("dir", ".", "working directory")
-	killCmd := flag.String("kill_cmd", "", "working directory")
+
+	var terminateCmdPart arrayFlags
+	flag.Var(&terminateCmdPart, "terminate-cmd-part", "terminate command part")
 
 	flag.Parse()
 	args := flag.Args()
 
-	program, err := startProgram(args, dir, killCmd)
+	program, err := startProgram(args, dir, terminateCmdPart)
 	if err == nil {
 		writePacket(os.Stdout, []byte("started"))
 	} else {

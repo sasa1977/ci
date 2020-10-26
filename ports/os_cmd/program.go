@@ -6,19 +6,18 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"syscall"
 	"time"
 )
 
 type program struct {
-	cmd        *exec.Cmd
-	killCmd    *string
-	reader     *bufio.Reader
-	exitStatus chan int
+	cmd               *exec.Cmd
+	terminateCmdParts arrayFlags
+	reader            *bufio.Reader
+	exitStatus        chan int
 }
 
-func startProgram(args []string, dir *string, killCmd *string) (*program, error) {
+func startProgram(args []string, dir *string, terminateCmdParts arrayFlags) (*program, error) {
 	cmd := exec.Command(args[0], args[1:]...)
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -34,7 +33,7 @@ func startProgram(args []string, dir *string, killCmd *string) (*program, error)
 		return nil, err
 	}
 
-	program := &program{cmd: cmd, reader: reader, killCmd: killCmd, exitStatus: make(chan int)}
+	program := &program{cmd: cmd, reader: reader, terminateCmdParts: terminateCmdParts, exitStatus: make(chan int)}
 	go program.awaitCommand()
 	return program, nil
 }
@@ -66,33 +65,32 @@ func (program *program) awaitCommand() {
 }
 
 func (program *program) stop() {
-	if *program.killCmd != "" {
-		fields := strings.Fields(*program.killCmd)
-		killCmd := exec.Command(fields[0], fields[1:]...)
-		killCmd.Dir = program.cmd.Dir
+	if len(program.terminateCmdParts) > 0 {
+		terminateCmd := exec.Command(program.terminateCmdParts[0], program.terminateCmdParts[1:]...)
+		terminateCmd.Dir = program.cmd.Dir
 
 		var buf bytes.Buffer
-		killCmd.Stdout = &buf
-		killCmd.Stderr = &buf
+		terminateCmd.Stdout = &buf
+		terminateCmd.Stderr = &buf
 
-		err := killCmd.Start()
+		err := terminateCmd.Start()
 		if err == nil {
 			select {
 			case exit := <-program.exitStatus:
-				killCmd.Wait()
+				terminateCmd.Wait()
 				sendOutput(buf.Bytes())
 				os.Exit(exit)
 
 			case <-time.After(5 * time.Second):
 				sendOutput(buf.Bytes())
-				killCmd.Process.Kill()
+				terminateCmd.Process.Kill()
 			}
 		} else {
 			sendOutput([]byte(fmt.Sprintf("%s", err)))
 		}
 	}
 
-	// we end up here if kill command doesn't exist or it failed to kill the process
+	// we end up here if terminate command doesn't exist or it failed to kill the process
 	program.cmd.Process.Kill()
 	exit := <-program.exitStatus
 	os.Exit(exit)
