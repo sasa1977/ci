@@ -6,26 +6,20 @@ defmodule OsCmd.Process do
           :stderr_to_stdout,
           :exit_status,
           :binary,
+          packet: 4,
           args: args(opts) ++ args
         ])
 
       receive do
-        {^process, {:data, "os_cmd: started\n"}} ->
+        {^process, {:data, "started"}} ->
           {:ok, process}
 
-        {^process, {:exit_status, _exit_code}} ->
-          message =
-            Stream.repeatedly(fn ->
-              receive do
-                {^process, {:data, data}} -> data
-              after
-                0 -> nil
-              end
-            end)
-            |> Stream.take_while(&(not is_nil(&1)))
-            |> Enum.join()
+        {^process, {:data, "not started " <> error}} ->
+          receive do
+            {^process, {:exit_status, _}} -> :ok
+          end
 
-          {:error, %OsCmd.Error{message: message}}
+          {:error, %OsCmd.Error{message: error}}
       end
     end
   end
@@ -33,7 +27,7 @@ defmodule OsCmd.Process do
   def stop(process, timeout \\ :timer.seconds(5)) do
     with {:connected, pid} <- Port.info(process, :connected) do
       if pid != self(), do: raise("Only the owner process can stop the command")
-      Port.command(process, "stop\n")
+      Port.command(process, "stop")
 
       receive do
         {^process, {:exit_status, _exit_code}} -> :ok
@@ -46,7 +40,7 @@ defmodule OsCmd.Process do
     :ok
   end
 
-  def handle_message(process, {process, {:data, data}}), do: {:output, data}
+  def handle_message(process, {process, {:data, data}}), do: :erlang.binary_to_term(data)
   def handle_message(process, {process, {:exit_status, exit_code}}), do: {:stopped, exit_code}
   def handle_message(_process, _other), do: nil
 

@@ -2,9 +2,12 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/binary"
 	"flag"
 	"fmt"
-	"log"
+	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
@@ -20,19 +23,26 @@ func main() {
 	args := flag.Args()
 
 	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Dir = *dir
-
-	err := cmd.Start()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
-		log.Fatal(err)
+		writePacket(os.Stdout, []byte(fmt.Sprintf("not started %s", err)))
+		os.Exit(-1)
 	}
 
-	fmt.Printf("os_cmd: started\n")
+	reader := bufio.NewReader(stdoutPipe)
+	cmd.Stderr = cmd.Stdout
+	cmd.Dir = *dir
+
+	err = cmd.Start()
+	if err != nil {
+		writePacket(os.Stdout, []byte(fmt.Sprintf("not started %s", err)))
+		os.Exit(-1)
+	}
+
+	writePacket(os.Stdout, []byte("started"))
 
 	exitStatus := make(chan int)
-	go awaitCommand(cmd, exitStatus)
+	go awaitCommand(cmd, reader, exitStatus)
 
 	stdinDone := make(chan bool)
 	go readStdin(stdinDone)
@@ -50,20 +60,26 @@ func kill(cmd *exec.Cmd, killCmd *string, exitStatus chan int) {
 	if *killCmd != "" {
 		fields := strings.Fields(*killCmd)
 		killCmd := exec.Command(fields[0], fields[1:]...)
-		killCmd.Stdout = os.Stdout
-		killCmd.Stderr = os.Stderr
 		killCmd.Dir = cmd.Dir
 
-		err := killCmd.Run()
+		var buf bytes.Buffer
+		killCmd.Stdout = &buf
+		killCmd.Stderr = &buf
+
+		err := killCmd.Start()
 		if err == nil {
 			select {
 			case exit := <-exitStatus:
+				killCmd.Wait()
+				sendOutput(buf.Bytes())
 				os.Exit(exit)
 
-			case <-time.After(5 * time.Second):
+			case <-time.After(1 * time.Second):
+				sendOutput(buf.Bytes())
+				killCmd.Process.Kill()
 			}
 		} else {
-			os.Stderr.WriteString(err.Error() + "\n")
+			sendOutput([]byte(fmt.Sprintf("%s", err)))
 		}
 	}
 	cmd.Process.Signal(syscall.SIGKILL)
@@ -71,7 +87,16 @@ func kill(cmd *exec.Cmd, killCmd *string, exitStatus chan int) {
 	os.Exit(exit)
 }
 
-func awaitCommand(cmd *exec.Cmd, exitStatus chan int) {
+func awaitCommand(cmd *exec.Cmd, reader *bufio.Reader, exitStatus chan int) {
+	for {
+		s, err := reader.ReadString('\n')
+		if err == nil {
+			sendOutput([]byte(s))
+		} else {
+			break
+		}
+	}
+
 	err := cmd.Wait()
 	if err != nil {
 		exitError, ok := err.(*exec.ExitError)
@@ -92,8 +117,14 @@ func readStdin(stdinDone chan bool) {
 	rdr := bufio.NewReader(os.Stdin)
 
 	for {
-		out, err := rdr.ReadString('\n')
-		if err != nil || out == "stop\n" {
+		var messageSize int32
+		err := binary.Read(rdr, binary.BigEndian, &messageSize)
+		if err != nil {
+			break
+		}
+
+		bytes, err := ioutil.ReadAll(io.LimitReader(rdr, int64(messageSize)))
+		if err != nil || string(bytes) == "stop" {
 			break
 		}
 	}
