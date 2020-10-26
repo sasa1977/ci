@@ -7,6 +7,11 @@ defmodule OsCmdTest do
       assert error.message =~ "executable file not found"
     end
 
+    test "returns error on unclosed quotes" do
+      assert {:error, error} = start_cmd(~s/bash -c "echo 1/)
+      assert error.message == ~s/missing closing \"/
+    end
+
     test "returns error on invalid directory" do
       Process.flag(:trap_exit, true)
       assert {:error, error} = start_cmd("echo 1", cd: "/unknown/directory")
@@ -23,6 +28,35 @@ defmodule OsCmdTest do
       pid = start_cmd!("echo 1", notify: self())
       assert_receive {^pid, {:output, "1\n"}}
       assert_receive {^pid, {:stopped, 0}}
+    end
+
+    test "supports quoted args" do
+      pid = start_cmd!(~s/bash -c "echo 1"/)
+      assert_receive {^pid, {:output, "1\n"}}
+
+      pid = start_cmd!(~s/bash -c "echo '\\"'"/)
+      assert_receive {^pid, {:output, ~s/"\n/}}
+
+      pid = start_cmd!(~s/bash -c 'echo 1'/)
+      assert_receive {^pid, {:output, "1\n"}}
+
+      pid = start_cmd!(~s/bash -c 'echo "\\'"'/)
+      assert_receive {^pid, {:output, ~s/'\n/}}
+    end
+
+    test "captures stdout and stderr" do
+      pid =
+        start_cmd!("""
+        bash -c "
+          echo 1
+          echo 2 >&2
+          echo 3
+        "
+        """)
+
+      assert_receive {^pid, {:output, "1\n"}}
+      assert_receive {^pid, {:output, "2\n"}}
+      assert_receive {^pid, {:output, "3\n"}}
     end
 
     test "returns the correct exit code" do
