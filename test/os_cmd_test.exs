@@ -100,4 +100,10 @@ defmodule OsCmdTest do
     Process.sleep(100)
     assert File.read!("test.txt") == contents
   end
+
+  test "terminates the program if it doesn't complete in the given time" do
+    Process.flag(:trap_exit, true)
+    {:ok, pid} = OsCmd.start_link({"sleep infinity", timeout: 1})
+    assert_receive {:EXIT, ^pid, :normal}
+  end
 end

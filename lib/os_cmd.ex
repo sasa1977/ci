@@ -26,6 +26,9 @@ defmodule OsCmd do
   def init({args, opts}) do
     Process.flag(:trap_exit, true)
 
+    with {:ok, timeout} <- Keyword.fetch(opts, :timeout),
+         do: Process.send_after(self(), :timeout, timeout)
+
     case open_port(args, opts) do
       {:ok, port} -> {:ok, %{port: port, notify: Keyword.get(opts, :notify)}}
       {:error, reason} -> {:stop, reason}
@@ -42,6 +45,9 @@ defmodule OsCmd do
     if not is_nil(state.notify), do: send(state.notify, {self(), :erlang.binary_to_term(message)})
     {:noreply, state}
   end
+
+  def handle_info(:timeout, state),
+    do: {:stop, :normal, state}
 
   @impl GenServer
   def terminate(_reason, %{port: nil}), do: :ok
