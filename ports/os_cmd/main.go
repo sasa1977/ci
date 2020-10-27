@@ -27,19 +27,22 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 
-	program, err := startProgram(args, dir, terminateCmdPart)
+	stdoutWriter := startStdoutWriter()
+	program, err := startProgram(args, dir, terminateCmdPart, stdoutWriter)
 	if err == nil {
-		writePacket(os.Stdout, []byte("started"))
+		stdoutWriter.sendOutput([]byte("started"))
 	} else {
-		writePacket(os.Stdout, []byte(fmt.Sprintf("not started %s", err)))
+		stdoutWriter.sendOutput([]byte(fmt.Sprintf("not started %s", err)))
 		os.Exit(-1)
 	}
 
 	select {
 	case <-startStdinReader():
-		program.stop()
+		go program.stop()
+		exitStatus := <-program.exitStatus
+		os.Exit(exitStatus)
 
-	case exit := <-program.exitStatus:
-		os.Exit(exit)
+	case exitStatus := <-program.exitStatus:
+		os.Exit(exitStatus)
 	}
 }

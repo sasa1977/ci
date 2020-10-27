@@ -15,12 +15,7 @@ defmodule OsCmd do
         args(opts) ++ Enum.flat_map(terminate_cmd_parts, &["-terminate-cmd-part", &1]) ++ args
 
       opts = normalize_opts(opts)
-
-      GenServer.start_link(
-        __MODULE__,
-        {args, opts},
-        Keyword.take(opts, [:name])
-      )
+      GenServer.start_link(__MODULE__, {args, opts}, Keyword.take(opts, [:name]))
     end
   end
 
@@ -132,7 +127,7 @@ defmodule OsCmd do
 
   @impl GenServer
   def terminate(_reason, %{port: nil}), do: :ok
-  def terminate(_reason, %{port: port}), do: stop_program(port)
+  def terminate(_reason, state), do: stop_program(state)
 
   defp args(opts) do
     Enum.flat_map(
@@ -169,6 +164,7 @@ defmodule OsCmd do
   defp invoke_handler(%{handler: handler}, message) do
     message = with message when is_binary(message) <- message, do: :erlang.binary_to_term(message)
     handler.(message)
+    :ok
   end
 
   defp open_port(args) do
@@ -190,7 +186,7 @@ defmodule OsCmd do
           {:error, %Error{message: error}}
 
         {^port, {:exit_status, _exit_status}} ->
-          exit("unexpected port exit")
+          {:error, %Error{message: "unexpected port exit"}}
       end
     end
   end
@@ -205,12 +201,16 @@ defmodule OsCmd do
     end
   end
 
-  defp stop_program(port) do
+  defp stop_program(%{port: port} = state) do
     Port.command(port, "stop")
 
-    receive do
-      {^port, {:exit_status, _exit_status}} -> :ok
-    end
+    Stream.repeatedly(fn ->
+      receive do
+        {^port, {:data, message}} -> invoke_handler(state, message)
+        {^port, {:exit_status, _exit_status}} -> nil
+      end
+    end)
+    |> Enum.find(&is_nil/1)
   end
 
   defp parse_command(input) do

@@ -2,9 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"fmt"
-	"os"
 	"os/exec"
 	"runtime"
 	"syscall"
@@ -16,9 +13,10 @@ type program struct {
 	terminateCmdParts arrayFlags
 	reader            *bufio.Reader
 	exitStatus        chan int
+	writer            stdoutWriter
 }
 
-func startProgram(args []string, dir *string, terminateCmdParts arrayFlags) (*program, error) {
+func startProgram(args []string, dir *string, terminateCmdParts arrayFlags, output stdoutWriter) (*program, error) {
 	cmd := exec.Command(args[0], args[1:]...)
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -34,53 +32,60 @@ func startProgram(args []string, dir *string, terminateCmdParts arrayFlags) (*pr
 		return nil, err
 	}
 
-	program := &program{cmd: cmd, reader: reader, terminateCmdParts: terminateCmdParts, exitStatus: make(chan int)}
-	go program.awaitCommand()
-	return program, nil
+	program := program{cmd, terminateCmdParts, reader, make(chan int), output}
+	go func() {
+		exitStatus := program.forwardOutput()
+		program.writer.flush()
+		program.exitStatus <- exitStatus
+	}()
+
+	return &program, nil
 }
 
-func (program *program) awaitCommand() {
+func (program program) forwardOutput() int {
 	for {
-		s, err := program.reader.ReadString('\n')
+		output, err := program.reader.ReadString('\n')
 		if err == nil {
-			sendOutput([]byte(s))
+			erlOutput := erlangTermBytes(tuple(atom("output"), erlbin(output)))
+			program.writer.sendOutput(erlOutput)
 		} else {
 			break
 		}
 	}
 
+	return program.awaitTermination()
+}
+
+func (program program) awaitTermination() int {
 	err := program.cmd.Wait()
-	if err != nil {
-		exitError, ok := err.(*exec.ExitError)
-
-		if ok {
-			var waitStatus syscall.WaitStatus
-			waitStatus = exitError.Sys().(syscall.WaitStatus)
-			program.exitStatus <- waitStatus.ExitStatus()
-		} else {
-			program.exitStatus <- 1
-		}
-	} else {
-		program.exitStatus <- 0
-	}
-}
-
-func (program *program) stop() {
-	exitStatus, err := program.politeTerminate()
 	if err == nil {
-		os.Exit(exitStatus)
+		return 0
 	}
 
-	program.cmd.Process.Kill()
-	exitStatus = <-program.exitStatus
-	os.Exit(exitStatus)
+	exitError, ok := err.(*exec.ExitError)
+
+	if ok {
+		var waitStatus syscall.WaitStatus
+		waitStatus = exitError.Sys().(syscall.WaitStatus)
+		return waitStatus.ExitStatus()
+	}
+	return 1
 }
 
-func (program *program) politeTerminate() (int, error) {
-	if len(program.terminateCmdParts) > 0 {
-		return program.invokeCustomTerminateCmd()
-	}
+func (program program) stop() {
+	program.politeTerminate()
+	program.cmd.Process.Kill()
+}
 
+func (program program) politeTerminate() {
+	if len(program.terminateCmdParts) > 0 {
+		program.invokeCustomTerminateCmd()
+	} else {
+		program.sendTermSignal()
+	}
+}
+
+func (program program) sendTermSignal() {
 	var signal syscall.Signal
 	if runtime.GOOS == "windows" {
 		signal = syscall.SIGKILL
@@ -89,40 +94,22 @@ func (program *program) politeTerminate() (int, error) {
 	}
 
 	err := program.cmd.Process.Signal(signal)
-	if err != nil {
-		return -1, err
+	if err == nil {
+		time.Sleep(5 * time.Second)
 	}
-
-	return program.awaitTermination()
 }
 
-func (program *program) invokeCustomTerminateCmd() (int, error) {
-	terminateCmd := exec.Command(program.terminateCmdParts[0], program.terminateCmdParts[1:]...)
-	terminateCmd.Dir = program.cmd.Dir
-
-	var buf bytes.Buffer
-	terminateCmd.Stdout = &buf
-	terminateCmd.Stderr = &buf
-
-	err := terminateCmd.Start()
+func (program program) invokeCustomTerminateCmd() {
+	var terminateCmdPart arrayFlags
+	terminateProgram, err := startProgram(program.terminateCmdParts, &program.cmd.Dir, terminateCmdPart, program.writer)
 	if err != nil {
-		return -1, err
+		return
 	}
 
-	go func() {
-		terminateCmd.Wait()
-		sendOutput(buf.Bytes())
-	}()
-
-	return program.awaitTermination()
-}
-
-func (program *program) awaitTermination() (int, error) {
 	select {
-	case exit := <-program.exitStatus:
-		return exit, nil
-
 	case <-time.After(5 * time.Second):
-		return -1, fmt.Errorf("timeout")
+		terminateProgram.cmd.Process.Kill()
+
+	case <-terminateProgram.exitStatus:
 	}
 }

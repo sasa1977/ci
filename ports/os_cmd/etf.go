@@ -29,8 +29,16 @@ func atom(value string) erlangAtom {
 	return erlangAtom{value: value}
 }
 
-func bin(value string) erlangBinary {
+func erlbin(value string) erlangBinary {
 	return erlangBinary{value: []byte(value)}
+}
+
+func erlangTermBytes(term erlangTerm) []byte {
+	// https://erlang.org/doc/apps/erts/erl_ext_dist.html#introduction
+	buf := new(bytes.Buffer)
+	buf.WriteByte(131)
+	term.writeBytes(buf)
+	return buf.Bytes()
 }
 
 func (atom erlangAtom) writeBytes(buf *bytes.Buffer) {
@@ -54,12 +62,4 @@ func (bin erlangBinary) writeBytes(buf *bytes.Buffer) {
 	buf.WriteByte(109)
 	binary.Write(buf, binary.BigEndian, int32(len(bin.value)))
 	buf.Write(bin.value)
-}
-
-func erlangTermBytes(term erlangTerm) []byte {
-	// https://erlang.org/doc/apps/erts/erl_ext_dist.html#introduction
-	buf := new(bytes.Buffer)
-	buf.WriteByte(131)
-	term.writeBytes(buf)
-	return buf.Bytes()
 }

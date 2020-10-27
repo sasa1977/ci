@@ -73,12 +73,15 @@ defmodule OsCmdTest do
     test "executes the specified terminate command" do
       Process.flag(:trap_exit, true)
       pid1 = start_cmd!("sleep infinity")
-      pid2 = start_cmd!("sleep infinity", terminate_cmd: "killall sleep")
+
+      pid2 =
+        start_cmd!("sleep infinity", terminate_cmd: ~s/bash -c "echo terminating; killall sleep"/)
 
       OsCmd.stop(pid2)
 
       assert_receive {:EXIT, ^pid1, :normal}
       assert_receive {:EXIT, ^pid2, :normal}
+      assert_receive {^pid2, {:output, "terminating\n"}}
     end
 
     test "terminates the program on stop" do
