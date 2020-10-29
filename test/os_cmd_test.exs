@@ -1,6 +1,8 @@
 defmodule OsCmdTest do
   use ExUnit.Case, async: false
 
+  with {:error, _} <- OsCmd.port_executable(), do: @moduletag(skip: true)
+
   describe "GenServer" do
     test "returns error on invalid program" do
       assert {:error, error} = start_cmd("unknown_program")

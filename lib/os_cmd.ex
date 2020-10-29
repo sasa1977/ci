@@ -191,7 +191,8 @@ defmodule OsCmd do
     end
   end
 
-  defp port_executable do
+  @doc false
+  def port_executable do
     Application.app_dir(:ci, "priv")
     |> Path.join("os_cmd*")
     |> Path.wildcard()

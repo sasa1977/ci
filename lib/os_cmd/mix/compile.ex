@@ -5,6 +5,18 @@ defmodule Mix.Tasks.Compile.OsCmd do
 
   @impl Mix.Task.Compiler
   def run(_argv) do
+    if System.find_executable("go") do
+      build_port()
+    else
+      Mix.shell().info([
+        IO.ANSI.yellow(),
+        "Can't find `go` executable. `OsCmd` will not work.",
+        IO.ANSI.reset()
+      ])
+    end
+  end
+
+  defp build_port do
     target_folder = Path.absname("priv")
     File.mkdir_p!(target_folder)
 
