@@ -72,10 +72,10 @@ defmodule OsCmdTest do
 
     test "executes the specified terminate command" do
       Process.flag(:trap_exit, true)
-      pid1 = start_cmd!("sleep infinity")
+      pid1 = start_cmd!("sleep 999999999")
 
       pid2 =
-        start_cmd!("sleep infinity", terminate_cmd: ~s/bash -c "echo terminating; killall sleep"/)
+        start_cmd!("sleep 999999999", terminate_cmd: ~s/bash -c "echo terminating; killall sleep"/)
 
       OsCmd.stop(pid2)
 
@@ -140,7 +140,7 @@ defmodule OsCmdTest do
 
     test "terminates the program if it doesn't complete in the given time" do
       Process.flag(:trap_exit, true)
-      pid = start_cmd!("sleep infinity", timeout: 1)
+      pid = start_cmd!("sleep 999999999", timeout: 1)
       assert_receive {:EXIT, ^pid, :normal}
     end
 
@@ -154,7 +154,7 @@ defmodule OsCmdTest do
       pid = start_cmd!(~s/bash -c "exit 1"/, propagate_exit?: true)
       assert_receive {:EXIT, ^pid, {:failed, 1}}
 
-      pid = start_cmd!(~s/sleep infinity/, propagate_exit?: true, timeout: 1)
+      pid = start_cmd!(~s/sleep 999999999/, propagate_exit?: true, timeout: 1)
       assert_receive {:EXIT, ^pid, :timeout}
     end
 
@@ -192,7 +192,7 @@ defmodule OsCmdTest do
 
     test "handles process crash" do
       Process.flag(:trap_exit, true)
-      pid = start_cmd!(~s/bash -c "echo 1; sleep infinity"/)
+      pid = start_cmd!(~s/bash -c "echo 1; sleep 999999999"/)
 
       events =
         pid
@@ -220,7 +220,7 @@ defmodule OsCmdTest do
       task =
         Task.async(fn ->
           Process.flag(:trap_exit, true)
-          OsCmd.run("sleep infinity")
+          OsCmd.run("sleep 999999999")
         end)
 
       Process.sleep(100)
