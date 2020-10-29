@@ -8,9 +8,9 @@ defmodule OsCmd do
   def start_link(command) when is_binary(command), do: start_link({command, []})
 
   def start_link({command, opts}) do
-    with {:ok, args} <- parse_command(command),
+    with {:ok, args} <- normalize_command(command),
          {terminate_cmd, opts} = Keyword.pop(opts, :terminate_cmd, ""),
-         {:ok, terminate_cmd_parts} <- parse_command(terminate_cmd) do
+         {:ok, terminate_cmd_parts} <- normalize_command(terminate_cmd) do
       args =
         args(opts) ++ Enum.flat_map(terminate_cmd_parts, &["-terminate-cmd-part", &1]) ++ args
 
@@ -214,7 +214,9 @@ defmodule OsCmd do
     |> Enum.find(&is_nil/1)
   end
 
-  defp parse_command(input) do
+  defp normalize_command(list) when is_list(list), do: {:ok, list}
+
+  defp normalize_command(input) when is_binary(input) do
     case next_arg(input) do
       {:error, _} = error ->
         error
@@ -223,7 +225,7 @@ defmodule OsCmd do
         {:ok, []}
 
       {:ok, arg, rest_input} ->
-        with {:ok, other_args} <- parse_command(rest_input),
+        with {:ok, other_args} <- normalize_command(rest_input),
              do: {:ok, [arg | other_args]}
     end
   end

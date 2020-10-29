@@ -32,6 +32,11 @@ defmodule OsCmdTest do
       assert_receive {^pid, {:stopped, 0}}
     end
 
+    test "supports list as input" do
+      pid = start_cmd!(~w/echo 1/, notify: self())
+      assert_receive {^pid, {:output, "1\n"}}
+    end
+
     test "supports quoted args" do
       pid = start_cmd!(~s/bash -c "echo 1"/)
       assert_receive {^pid, {:output, "1\n"}}
