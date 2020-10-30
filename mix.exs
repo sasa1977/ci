@@ -19,6 +19,8 @@ defmodule Ci.MixProject do
   end
 
   defp deps do
-    []
+    [
+      {:nimble_parsec, "~> 1.1", runtime: false}
+    ]
   end
 end

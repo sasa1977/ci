@@ -1,5 +1,6 @@
 defmodule OsCmd do
   use GenServer
+  import NimbleParsec
 
   defmodule Error do
     defexception [:message, :exit_status]
@@ -217,70 +218,39 @@ defmodule OsCmd do
   defp normalize_command(list) when is_list(list), do: {:ok, list}
 
   defp normalize_command(input) when is_binary(input) do
-    case next_arg(input) do
-      {:error, _} = error ->
-        error
-
-      :eof ->
-        {:ok, []}
-
-      {:ok, arg, rest_input} ->
-        with {:ok, other_args} <- normalize_command(rest_input),
-             do: {:ok, [arg | other_args]}
+    case parse_arguments(input) do
+      {:ok, args, "", _context, _line, _column} -> {:ok, args}
+      {:error, reason, rest, _context, _line, _column} -> raise "#{reason}: #{rest}"
     end
   end
 
-  defp next_arg(input) do
-    with {:ok, input} <- skip_whitespaces(input),
-         {:ok, chars, rest_input} <- arg_chars(input),
-         do: {:ok, to_string(chars), rest_input}
+  whitespaces = [?\s, ?\n, ?\r, ?\t]
+
+  unquoted = utf8_string(Enum.map(whitespaces, &{:not, &1}), min: 1)
+
+  quoted = fn quote_char ->
+    ignore(utf8_char([quote_char]))
+    |> repeat(
+      choice([
+        ignore(utf8_char([?\\])) |> utf8_char([quote_char, ?\\]),
+        utf8_char([{:not, quote_char}])
+      ])
+    )
+    |> ignore(utf8_char([quote_char]))
+    |> reduce({Kernel, :to_string, []})
   end
 
-  defp skip_whitespaces(""), do: :eof
+  arguments =
+    repeat(
+      ignore(repeat(utf8_char(whitespaces)))
+      |> choice([
+        quoted.(?"),
+        quoted.(?'),
+        lookahead_not(utf8_char([?", ?'])) |> concat(unquoted)
+      ])
+      |> ignore(repeat(utf8_char(whitespaces)))
+    )
+    |> eos()
 
-  defp skip_whitespaces(<<c, rest_input::binary>>) when c in [?\s, ?\t, ?\n, ?\r],
-    do: skip_whitespaces(rest_input)
-
-  defp skip_whitespaces(input), do: {:ok, input}
-
-  defp arg_chars(""), do: :eof
-
-  defp arg_chars(<<c, rest_input::binary>> = input) do
-    cond do
-      c in [?\s, ?\t, ?\n, ?\r] ->
-        {:ok, [], input}
-
-      c in [?", ?'] ->
-        with {:ok, chars, rest_input} <- quoted_chars(rest_input, c) do
-          case arg_chars(rest_input) do
-            {:ok, more_chars, rest_input} -> {:ok, chars ++ more_chars, rest_input}
-            :eof -> {:ok, chars, ""}
-            error -> error
-          end
-        end
-
-      true ->
-        case arg_chars(rest_input) do
-          {:ok, chars, rest_input} -> {:ok, [c | chars], rest_input}
-          :eof -> {:ok, [c], ""}
-          error -> error
-        end
-    end
-  end
-
-  defp quoted_chars("", quote_char),
-    do: {:error, %Error{message: "missing closing #{[quote_char]}"}}
-
-  defp quoted_chars(<<quote_char, rest_input::binary>>, quote_char),
-    do: {:ok, [], rest_input}
-
-  defp quoted_chars(<<?\\, quote_char, rest_input::binary>>, quote_char) do
-    with {:ok, chars, rest_input} <- quoted_chars(rest_input, quote_char),
-         do: {:ok, [quote_char | chars], rest_input}
-  end
-
-  defp quoted_chars(<<char, rest_input::binary>>, quote_char) do
-    with {:ok, chars, rest_input} <- quoted_chars(rest_input, quote_char),
-         do: {:ok, [char | chars], rest_input}
-  end
+  defparsecp :parse_arguments, arguments
 end
