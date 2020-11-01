@@ -97,7 +97,7 @@ defmodule OsCmd do
     with {:ok, timeout} <- Keyword.fetch(opts, :timeout),
          do: Process.send_after(self(), :timeout, timeout)
 
-    case open_port(args) do
+    case open_port(args, opts) do
       {:ok, port} ->
         {:ok,
          %{
@@ -163,7 +163,15 @@ defmodule OsCmd do
         end
       )
 
-    Keyword.put(opts, :handler, handler)
+    env =
+      opts
+      |> Keyword.get(:env, [])
+      |> Enum.map(fn
+        {name, nil} -> {to_charlist(name), false}
+        {name, value} -> {to_charlist(name), to_charlist(value)}
+      end)
+
+    Keyword.merge(opts, handler: handler, env: env)
   end
 
   defp stop_server(%{propagate_exit?: false} = state, _exit_reason), do: {:stop, :normal, state}
@@ -192,15 +200,18 @@ defmodule OsCmd do
 
   defp get_utf8_chars(other), do: {[], other}
 
-  defp open_port(args) do
+  defp open_port(args, opts) do
     with {:ok, port_executable} <- port_executable() do
       port =
-        Port.open({:spawn_executable, port_executable}, [
-          :exit_status,
-          :binary,
-          packet: 4,
-          args: args
-        ])
+        Port.open(
+          {:spawn_executable, port_executable},
+          [
+            :exit_status,
+            :binary,
+            packet: 4,
+            args: args
+          ] ++ Keyword.take(opts, ~w/env/a)
+        )
 
       receive do
         {^port, {:data, "started"}} ->

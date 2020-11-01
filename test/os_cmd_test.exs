@@ -28,6 +28,29 @@ defmodule OsCmdTest do
         assert_receive {^pid, {:stopped, 0}}
       end
 
+      test "inherits environment" do
+        System.put_env("FOO", "bar")
+        pid = start_cmd!(~s/bash -c "echo $FOO"/, notify: self())
+        assert_receive {^pid, {:output, "bar\n"}}
+      end
+
+      test "overrides environment" do
+        System.put_env("FOO", "bar")
+        pid = start_cmd!(~s/bash -c "echo $FOO"/, notify: self(), env: [{"FOO", "baz"}])
+        assert_receive {^pid, {:output, "baz\n"}}
+      end
+
+      test "sets environment" do
+        pid = start_cmd!(~s/bash -c "echo $BAR"/, notify: self(), env: [{"BAR", "baz"}])
+        assert_receive {^pid, {:output, "baz\n"}}
+      end
+
+      test "unsets environment" do
+        System.put_env("FOO", "bar")
+        pid = start_cmd!(~s/bash -c "echo $FOO"/, notify: self(), env: [{"FOO", nil}])
+        assert_receive {^pid, {:output, "\n"}}
+      end
+
       test "supports list as input" do
         pid = start_cmd!(~w/echo 1/, notify: self())
         assert_receive {^pid, {:output, "1\n"}}
