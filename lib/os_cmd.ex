@@ -60,7 +60,15 @@ defmodule OsCmd do
   end
 
   def run(cmd, opts \\ []) do
-    with {:ok, pid} <- start_link({cmd, [notify: self()] ++ opts}) do
+    start_arg = {cmd, [notify: self()] ++ opts}
+
+    start_fun =
+      case Keyword.fetch(opts, :start) do
+        :error -> fn -> start_link(start_arg) end
+        {:ok, fun} -> fn -> fun.({__MODULE__, start_arg}) end
+      end
+
+    with {:ok, pid} <- start_fun.() do
       try do
         pid
         |> events()
