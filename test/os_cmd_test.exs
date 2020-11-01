@@ -47,21 +47,6 @@ defmodule OsCmdTest do
         assert_receive {^pid, {:output, ~s/'\n/}}
       end
 
-      test "captures stdout and stderr" do
-        pid =
-          start_cmd!("""
-          bash -c "
-            echo 1
-            echo 2 >&2
-            echo 3
-          "
-          """)
-
-        assert_receive {^pid, {:output, "1\n"}}
-        assert_receive {^pid, {:output, "2\n"}}
-        assert_receive {^pid, {:output, "3\n"}}
-      end
-
       test "returns the correct exit code" do
         pid = start_cmd!(~s/bash -c "exit 42"/, notify: self())
         assert_receive {^pid, {:stopped, 42}}

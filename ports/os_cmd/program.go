@@ -44,9 +44,10 @@ func startProgram(args []string, dir *string, terminateCmdParts arrayFlags, outp
 
 func (program program) forwardOutput() int {
 	for {
-		output, err := program.reader.ReadString('\n')
+		output := make([]byte, 1024)
+		size, err := program.reader.Read(output)
 		if err == nil {
-			erlOutput := erlangTermBytes(tuple(atom("output"), erlbin(output)))
+			erlOutput := erlangTermBytes(tuple(atom("output"), erlangBinary{output[:size]}))
 			program.writer.sendOutput(erlOutput)
 		} else {
 			break

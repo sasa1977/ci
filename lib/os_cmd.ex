@@ -103,7 +103,8 @@ defmodule OsCmd do
          %{
            port: port,
            handler: Keyword.get(opts, :handler),
-           propagate_exit?: Keyword.get(opts, :propagate_exit?, false)
+           propagate_exit?: Keyword.get(opts, :propagate_exit?, false),
+           buffer: ""
          }}
 
       {:error, reason} ->
@@ -118,7 +119,7 @@ defmodule OsCmd do
     do: {:noreply, %{state | port: nil}, {:continue, {:stop, exit_status}}}
 
   def handle_info({port, {:data, message}}, %{port: port} = state) do
-    invoke_handler(state, message)
+    state = invoke_handler(state, message)
     {:noreply, state}
   end
 
@@ -126,7 +127,7 @@ defmodule OsCmd do
 
   @impl GenServer
   def handle_continue({:stop, exit_status}, state) do
-    invoke_handler(state, {:stopped, exit_status})
+    state = invoke_handler(state, {:stopped, exit_status})
     exit_reason = if exit_status == 0, do: :normal, else: {:failed, exit_status}
     stop_server(%{state | port: nil}, exit_reason)
   end
@@ -168,13 +169,28 @@ defmodule OsCmd do
   defp stop_server(%{propagate_exit?: false} = state, _exit_reason), do: {:stop, :normal, state}
   defp stop_server(state, reason), do: {:stop, reason, state}
 
-  defp invoke_handler(%{handler: nil}, _message), do: :ok
+  defp invoke_handler(%{handler: nil} = state, _message), do: state
 
-  defp invoke_handler(%{handler: handler}, message) do
+  defp invoke_handler(%{handler: handler} = state, message) do
     message = with message when is_binary(message) <- message, do: :erlang.binary_to_term(message)
+    {message, state} = normalize_message(message, state)
     handler.(message)
-    :ok
+    state
   end
+
+  defp normalize_message({:output, output}, state) do
+    {output, rest} = get_utf8_chars(state.buffer <> output)
+    {{:output, to_string(output)}, %{state | buffer: rest}}
+  end
+
+  defp normalize_message(message, state), do: {message, state}
+
+  defp get_utf8_chars(<<char::utf8, rest::binary>>) do
+    {remaining_bytes, rest} = get_utf8_chars(rest)
+    {[char | remaining_bytes], rest}
+  end
+
+  defp get_utf8_chars(other), do: {[], other}
 
   defp open_port(args) do
     with {:ok, port_executable} <- port_executable() do
