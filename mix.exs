@@ -21,8 +21,9 @@ defmodule Ci.MixProject do
 
   defp deps do
     [
-      {:nimble_parsec, "~> 1.1", runtime: false},
-      {:mox, "~> 1.0"}
+      {:mox, "~> 1.0"},
+      {:nimble_parsec, "~> 1.1"},
+      {:parent, "~> 0.11"}
     ]
   end
 end
