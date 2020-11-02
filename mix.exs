@@ -14,13 +14,15 @@ defmodule Ci.MixProject do
 
   def application do
     [
+      mod: {Ci.App, []},
       extra_applications: [:logger]
     ]
   end
 
   defp deps do
     [
-      {:nimble_parsec, "~> 1.1", runtime: false}
+      {:nimble_parsec, "~> 1.1", runtime: false},
+      {:mox, "~> 1.0"}
     ]
   end
 end

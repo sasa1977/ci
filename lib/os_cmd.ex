@@ -1,6 +1,6 @@
 defmodule OsCmd do
   use GenServer
-  import NimbleParsec
+  alias OsCmd.Faker
 
   defmodule Error do
     defexception [:message, :exit_status]
@@ -9,15 +9,8 @@ defmodule OsCmd do
   def start_link(command) when is_binary(command), do: start_link({command, []})
 
   def start_link({command, opts}) do
-    with {:ok, args} <- normalize_command(command),
-         {terminate_cmd, opts} = Keyword.pop(opts, :terminate_cmd, ""),
-         {:ok, terminate_cmd_parts} <- normalize_command(terminate_cmd) do
-      args =
-        args(opts) ++ Enum.flat_map(terminate_cmd_parts, &["-terminate-cmd-part", &1]) ++ args
-
-      opts = normalize_opts(opts)
-      GenServer.start_link(__MODULE__, {args, opts}, Keyword.take(opts, [:name]))
-    end
+    opts = normalize_opts(opts)
+    GenServer.start_link(__MODULE__, {command, opts}, Keyword.take(opts, [:name]))
   end
 
   def stop(server, timeout \\ :infinity) do
@@ -90,14 +83,28 @@ defmodule OsCmd do
     end
   end
 
+  def allow(pid), do: Faker.allow(pid)
+  def expect(fun), do: Faker.expect(fun)
+  def stub(fun), do: Faker.stub(fun)
+
   @impl GenServer
-  def init({args, opts}) do
+  def init({cmd, opts}) do
     Process.flag(:trap_exit, true)
 
     with {:ok, timeout} <- Keyword.fetch(opts, :timeout),
          do: Process.send_after(self(), :timeout, timeout)
 
-    case open_port(args, opts) do
+    starter =
+      case Faker.fetch() do
+        {:ok, pid} ->
+          Mox.allow(Faker.Port, pid, self())
+          Faker.Port
+
+        :error ->
+          OsCmd.Port
+      end
+
+    case starter.start(cmd, opts) do
       {:ok, port} ->
         {:ok,
          %{
@@ -138,16 +145,6 @@ defmodule OsCmd do
   @impl GenServer
   def terminate(_reason, %{port: nil}), do: :ok
   def terminate(_reason, state), do: stop_program(state)
-
-  defp args(opts) do
-    Enum.flat_map(
-      opts,
-      fn
-        {:cd, dir} -> ["-dir", dir]
-        _other -> []
-      end
-    )
-  end
 
   defp normalize_opts(opts) do
     handler =
@@ -200,44 +197,6 @@ defmodule OsCmd do
 
   defp get_utf8_chars(other), do: {[], other}
 
-  defp open_port(args, opts) do
-    with {:ok, port_executable} <- port_executable() do
-      port =
-        Port.open(
-          {:spawn_executable, port_executable},
-          [
-            :exit_status,
-            :binary,
-            packet: 4,
-            args: args
-          ] ++ Keyword.take(opts, ~w/env/a)
-        )
-
-      receive do
-        {^port, {:data, "started"}} ->
-          {:ok, port}
-
-        {^port, {:data, "not started " <> error}} ->
-          Port.close(port)
-          {:error, %Error{message: error}}
-
-        {^port, {:exit_status, _exit_status}} ->
-          {:error, %Error{message: "unexpected port exit"}}
-      end
-    end
-  end
-
-  @doc false
-  def port_executable do
-    Application.app_dir(:ci, "priv")
-    |> Path.join("os_cmd*")
-    |> Path.wildcard()
-    |> case do
-      [executable] -> {:ok, executable}
-      _ -> {:error, %Error{message: "can't find os_cmd executable"}}
-    end
-  end
-
   defp stop_program(%{port: port} = state) do
     Port.command(port, "stop")
 
@@ -250,42 +209,11 @@ defmodule OsCmd do
     |> Enum.find(&is_nil/1)
   end
 
-  defp normalize_command(list) when is_list(list), do: {:ok, list}
+  defmodule Program do
+    @moduledoc false
+    @type id :: any
 
-  defp normalize_command(input) when is_binary(input) do
-    case parse_arguments(input) do
-      {:ok, args, "", _context, _line, _column} -> {:ok, args}
-      {:error, reason, rest, _context, _line, _column} -> raise "#{reason}: #{rest}"
-    end
+    @callback start(cmd :: String.t() | [String.t()], opts :: Keyword.t()) ::
+                {:ok, id} | {:error, reason :: any}
   end
-
-  whitespaces = [?\s, ?\n, ?\r, ?\t]
-
-  unquoted = utf8_string(Enum.map(whitespaces, &{:not, &1}), min: 1)
-
-  quoted = fn quote_char ->
-    ignore(utf8_char([quote_char]))
-    |> repeat(
-      choice([
-        ignore(utf8_char([?\\])) |> utf8_char([quote_char, ?\\]),
-        utf8_char([{:not, quote_char}])
-      ])
-    )
-    |> ignore(utf8_char([quote_char]))
-    |> reduce({Kernel, :to_string, []})
-  end
-
-  arguments =
-    repeat(
-      ignore(repeat(utf8_char(whitespaces)))
-      |> choice([
-        quoted.(?"),
-        quoted.(?'),
-        lookahead_not(utf8_char([?", ?'])) |> concat(unquoted)
-      ])
-      |> ignore(repeat(utf8_char(whitespaces)))
-    )
-    |> eos()
-
-  defparsecp :parse_arguments, arguments
 end

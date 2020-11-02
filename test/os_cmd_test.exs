@@ -1,7 +1,7 @@
 defmodule OsCmdTest do
   use ExUnit.Case, async: false
 
-  with {:error, _} <- OsCmd.port_executable(), do: @moduletag(skip: true)
+  with {:error, _} <- OsCmd.Port.executable(), do: @moduletag(skip: true)
 
   if match?({:win32, _}, :os.type()) do
     test "sends notifications when configured" do
@@ -243,6 +243,79 @@ defmodule OsCmdTest do
 
         assert Task.await(task) == {:error, :killed, ""}
       end
+    end
+  end
+
+  describe "expect" do
+    test "returns output and exit status" do
+      OsCmd.expect(fn _command, _opts -> {:ok, 1, "foo"} end)
+      assert OsCmd.run("echo 1") == {:error, 1, "foo"}
+    end
+
+    test "uses fake from the closest ancestor" do
+      OsCmd.expect(fn _command, _opts -> {:ok, 1, "foo"} end)
+
+      result =
+        Task.async(fn ->
+          OsCmd.expect(fn _command, _opts -> {:ok, 1, "bar"} end)
+
+          Task.async(fn -> OsCmd.run("echo 1") end)
+          |> Task.await()
+        end)
+        |> Task.await()
+
+      assert result == {:error, 1, "bar"}
+    end
+
+    test "uses allowances" do
+      test_pid = self()
+
+      {:ok, pid} =
+        Task.start_link(fn ->
+          assert_receive :continue
+          send(test_pid, OsCmd.run("echo 1"))
+        end)
+
+      Task.start_link(fn ->
+        OsCmd.allow(pid)
+        OsCmd.expect(fn _command, _opts -> {:ok, 0, "foo"} end)
+        send(pid, :continue)
+        Process.sleep(:infinity)
+      end)
+
+      assert_receive {:ok, "foo"}
+    end
+
+    test "returns start error" do
+      Process.flag(:trap_exit, true)
+      OsCmd.expect(fn _command, _opts -> {:error, "foo"} end)
+      assert OsCmd.run("echo 1") == {:error, "foo"}
+    end
+
+    test "matches expectations" do
+      OsCmd.expect(fn "echo 1", _ -> {:ok, 0, "foo"} end)
+      OsCmd.expect(fn "echo 2", _ -> {:ok, 0, "bar"} end)
+
+      assert OsCmd.run("echo 1") == {:ok, "foo"}
+      assert OsCmd.run("echo 2") == {:ok, "bar"}
+    end
+
+    test "fails if expectation is not met" do
+      OsCmd.expect(fn _, _ -> {:ok, 0, ""} end)
+      assert_raise(Mox.VerificationError, fn -> Mox.verify!() end)
+    end
+  end
+
+  describe "stub" do
+    test "doesn't have to be called" do
+      OsCmd.stub(fn _command, _opts -> {:ok, 1, "foo"} end)
+      Mox.verify!()
+    end
+
+    test "can be called more than once" do
+      OsCmd.stub(fn _command, _opts -> {:ok, 0, "foo"} end)
+      assert OsCmd.run("echo 1") == {:ok, "foo"}
+      assert OsCmd.run("echo 1") == {:ok, "foo"}
     end
   end
 
