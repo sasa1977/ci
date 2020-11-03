@@ -27,6 +27,12 @@ func startProgram(args []string, dir *string, terminateCmdParts arrayFlags, outp
 	cmd.Stderr = cmd.Stdout
 	cmd.Dir = *dir
 
+	if runtime.GOOS != "windows" {
+		// supports correct children termination on unix
+		// (https://medium.com/@felixge/killing-a-child-process-and-all-of-its-children-in-go-54079af94773)
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	}
+
 	err = cmd.Start()
 	if err != nil {
 		return nil, err
@@ -76,6 +82,17 @@ func (program program) awaitTermination() int {
 func (program program) stop() {
 	program.politeTerminate()
 	program.cmd.Process.Kill()
+	if runtime.GOOS != "windows" {
+		// supports correct children termination on unix
+		// (https://medium.com/@felixge/killing-a-child-process-and-all-of-its-children-in-go-54079af94773)
+		syscall.Kill(-program.cmd.Process.Pid, syscall.SIGTERM)
+	}
+
+	// If the started program spawned its own processes which are now zombies, the main process will
+	// be defunct, and won't stop. In this case we just give up and leave these zombies dangling.
+	time.Sleep(1 * time.Second)
+	program.exitStatus <- -1
+
 }
 
 func (program program) politeTerminate() {
@@ -95,6 +112,13 @@ func (program program) sendTermSignal() {
 	}
 
 	err := program.cmd.Process.Signal(signal)
+
+	if runtime.GOOS != "windows" {
+		// supports correct children termination on unix
+		// (https://medium.com/@felixge/killing-a-child-process-and-all-of-its-children-in-go-54079af94773)
+		syscall.Kill(-program.cmd.Process.Pid, syscall.SIGTERM)
+	}
+
 	if err == nil {
 		time.Sleep(5 * time.Second)
 	}
