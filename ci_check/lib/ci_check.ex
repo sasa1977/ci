@@ -1,6 +1,6 @@
 defmodule CiCheck do
   def run do
-    with {:error, reason} <- Job.run!(&check/0),
+    with {:error, reason} <- Job.run!(&check/0, timeout: :timer.minutes(20)),
          do: raise(reason)
   end
 
@@ -15,13 +15,29 @@ defmodule CiCheck do
     end
   end
 
-  defp os_cmd(cmd, opts \\ []), do: Job.run_os_cmd(cmd, cmd_opts(opts))
-  defp start_os_cmd(cmd, opts \\ []), do: Job.start_os_cmd(cmd, cmd_opts(opts))
+  defp os_cmd(cmd, opts \\ []),
+    do: cmd |> start_os_cmd(opts) |> await_os_cmd()
+
+  defp start_os_cmd(cmd, opts \\ []) do
+    case Job.start_aux({OsCmd, {cmd, cmd_opts(opts)}}) do
+      {:ok, pid} -> %{pid: pid, cmd: cmd}
+      {:error, %OsCmd.Error{} = error} -> %{cmd: cmd, error: error}
+    end
+  end
+
+  defp await_os_cmd(%{error: error}), do: {:error, error.message}
+
+  defp await_os_cmd(cmd) do
+    case OsCmd.await(cmd.pid) do
+      {:ok, _output} -> :ok
+      {:error, reason, _output} -> {:error, reason}
+    end
+  end
 
   defp await_os_cmds(cmds) do
     errors =
       for cmd <- cmds,
-          {:error, error} <- [Job.await_os_cmd(cmd)],
+          {:error, error} <- [await_os_cmd(cmd)],
           do: "#{cmd.cmd} exited with status #{error}"
 
     case errors do
@@ -32,7 +48,7 @@ defmodule CiCheck do
 
   defp cmd_opts(opts) do
     Keyword.merge(
-      [cd: "..", timeout: :timer.minutes(1), handler: &handle_command_event/1],
+      [notify: self(), cd: "..", handler: &handle_command_event/1],
       opts
     )
   end

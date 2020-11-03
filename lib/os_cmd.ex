@@ -63,23 +63,27 @@ defmodule OsCmd do
 
     with {:ok, pid} <- start_fun.() do
       try do
-        pid
-        |> events()
-        |> Enum.reduce(
-          %{output: [], exit_status: nil},
-          fn
-            {:output, output}, acc -> update_in(acc.output, &[&1, output])
-            {:stopped, exit_status}, acc -> %{acc | exit_status: exit_status}
-            {:terminated, reason}, acc -> %{acc | exit_status: reason}
-          end
-        )
-        |> case do
-          %{exit_status: 0} = result -> {:ok, to_string(result.output)}
-          result -> {:error, result.exit_status, to_string(result.output)}
-        end
+        await(pid)
       after
         stop(pid)
       end
+    end
+  end
+
+  def await(pid) do
+    pid
+    |> events()
+    |> Enum.reduce(
+      %{output: [], exit_status: nil},
+      fn
+        {:output, output}, acc -> update_in(acc.output, &[&1, output])
+        {:stopped, exit_status}, acc -> %{acc | exit_status: exit_status}
+        {:terminated, reason}, acc -> %{acc | exit_status: reason}
+      end
+    )
+    |> case do
+      %{exit_status: 0} = result -> {:ok, to_string(result.output)}
+      result -> {:error, result.exit_status, to_string(result.output)}
     end
   end
 

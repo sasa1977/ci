@@ -55,29 +55,6 @@ defmodule Job do
     end
   end
 
-  def start_os_cmd(cmd, opts \\ []) do
-    case start_aux({OsCmd, {cmd, [notify: self()] ++ opts}}) do
-      {:ok, pid} -> %{pid: pid, cmd: cmd}
-      {:error, %OsCmd.Error{} = error} -> %{cmd: cmd, error: error}
-    end
-  end
-
-  def await_os_cmd(%{error: error}), do: {:error, error.message}
-
-  def await_os_cmd(cmd) do
-    cmd.pid
-    |> OsCmd.events()
-    |> Stream.map(fn
-      {:stopped, 0} -> :ok
-      {:stopped, exit_status} -> {:error, exit_status}
-      {:terminated, reason} -> {:error, reason}
-      _other -> nil
-    end)
-    |> Enum.find(& &1)
-  end
-
-  def run_os_cmd(cmd, opts \\ []), do: cmd |> start_os_cmd(opts) |> await_os_cmd()
-
   def start_aux(child_spec) do
     Parent.Client.start_child(
       parent(),

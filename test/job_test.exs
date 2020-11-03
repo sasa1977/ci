@@ -58,24 +58,4 @@ defmodule JobTest do
       assert res == {:ok, {:error, :killed}}
     end
   end
-
-  describe "os_cmd" do
-    test "can be started and awaited on" do
-      OsCmd.stub(fn _, _ -> {:ok, 0, ""} end)
-
-      Job.run(fn ->
-        assert Job.await_os_cmd(Job.start_os_cmd("echo 1")) == :ok
-      end)
-    end
-
-    test "can be executed synchronously" do
-      OsCmd.stub(fn _, _ -> {:ok, 0, ""} end)
-      Job.run(fn -> assert Job.run_os_cmd("echo 1") == :ok end)
-    end
-
-    test "returns an error" do
-      OsCmd.stub(fn _, _ -> {:ok, 1, ""} end)
-      Job.run(fn -> assert Job.run_os_cmd("echo 1") == {:error, 1} end)
-    end
-  end
 end
