@@ -21,7 +21,7 @@ defmodule CiCheck do
 
   defp start_check(component) do
     Job.start_task(fn ->
-      set_log_prefix("[#{component}] ")
+      set_log_prefix(to_string(component))
       check_component(component)
     end)
   end
@@ -62,20 +62,28 @@ defmodule CiCheck do
     end
   end
 
-  defp await_os_cmd(%{error: error}), do: {:error, error.message}
+  defp await_os_cmd(%{error: error} = cmd),
+    do: {:error, cmd_error(cmd, error.message <> "\n", "failed to start")}
 
   defp await_os_cmd(cmd) do
     case OsCmd.await(cmd.pid) do
-      {:ok, _output} ->
-        :ok
-
-      {:error, reason, output} ->
-        {:error, "#{log_prefix()}#{cmd.cmd} failed with reason #{reason}:\n#{output}"}
+      {:ok, _output} -> :ok
+      {:error, reason, output} -> {:error, cmd_error(cmd, output, "failed with reason #{reason}")}
     end
   end
 
   defp await_os_cmds(cmds),
     do: cmds |> Stream.map(&await_os_cmd/1) |> combine_results()
+
+  defp cmd_error(cmd, output, summary) do
+    to_string([
+      log_prefix(),
+      [IO.ANSI.red(), IO.ANSI.bright()],
+      "#{cmd.cmd} #{summary}:\n",
+      IO.ANSI.reset(),
+      output |> String.split("\n") |> Enum.map(&["  ", &1]) |> Enum.join("\n")
+    ])
+  end
 
   defp combine_results(results) do
     case for {:error, error} <- results, do: error do
@@ -88,7 +96,7 @@ defmodule CiCheck do
 
   defp log_prefix do
     with <<_, _::binary>> = prefix <- Process.get({__MODULE__, :log_prefix}, ""),
-         do: String.pad_leading(prefix, 11)
+         do: [IO.ANSI.green(), IO.ANSI.bright(), "#{prefix}: ", IO.ANSI.reset()]
   end
 
   defp set_cwd(cwd), do: Process.put({__MODULE__, :cwd}, cwd)
