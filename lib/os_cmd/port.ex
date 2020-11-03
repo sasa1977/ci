@@ -53,6 +53,7 @@ defmodule OsCmd.Port do
       opts,
       fn
         {:cd, dir} -> ["-dir", dir]
+        {:pty, value} -> ["-pty=#{value}"]
         _other -> []
       end
     )

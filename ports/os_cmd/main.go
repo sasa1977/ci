@@ -20,6 +20,7 @@ func (arrayFlags *arrayFlags) Set(value string) error {
 
 func main() {
 	dir := flag.String("dir", ".", "working directory")
+	usePty := flag.Bool("pty", false, "pty")
 
 	var terminateCmdPart arrayFlags
 	flag.Var(&terminateCmdPart, "terminate-cmd-part", "terminate command part")
@@ -28,7 +29,7 @@ func main() {
 	args := flag.Args()
 
 	stdoutWriter := startStdoutWriter()
-	program, err := startProgram(args, dir, terminateCmdPart, stdoutWriter)
+	program, err := startProgram(args, dir, usePty, terminateCmdPart, stdoutWriter)
 	if err == nil {
 		stdoutWriter.sendOutput([]byte("started"))
 	} else {

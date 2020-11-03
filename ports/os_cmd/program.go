@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"syscall"
 	"time"
+
+	"github.com/creack/pty"
 )
 
 type program struct {
@@ -14,10 +16,51 @@ type program struct {
 	reader            *bufio.Reader
 	exitStatus        chan int
 	writer            stdoutWriter
+	usePty            *bool
 }
 
-func startProgram(args []string, dir *string, terminateCmdParts arrayFlags, output stdoutWriter) (*program, error) {
+func startProgram(args []string, dir *string, usePty *bool, terminateCmdParts arrayFlags, output stdoutWriter) (*program, error) {
 	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Dir = *dir
+
+	var reader *bufio.Reader
+	var err error
+
+	if *usePty {
+		reader, err = startPty(cmd)
+	} else {
+		reader, err = startNormal(cmd)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	program := program{cmd, terminateCmdParts, reader, make(chan int), output, usePty}
+	go func() {
+		exitStatus := program.forwardOutput()
+		program.writer.flush()
+		program.exitStatus <- exitStatus
+	}()
+
+	return &program, nil
+}
+
+func startPty(cmd *exec.Cmd) (*bufio.Reader, error) {
+	reader, err := pty.Start(cmd)
+
+	if err == pty.ErrUnsupported {
+		return startNormal(cmd)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return bufio.NewReader(reader), nil
+}
+
+func startNormal(cmd *exec.Cmd) (*bufio.Reader, error) {
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -25,7 +68,6 @@ func startProgram(args []string, dir *string, terminateCmdParts arrayFlags, outp
 
 	reader := bufio.NewReader(stdoutPipe)
 	cmd.Stderr = cmd.Stdout
-	cmd.Dir = *dir
 
 	if runtime.GOOS != "windows" {
 		// supports correct children termination on unix
@@ -38,14 +80,7 @@ func startProgram(args []string, dir *string, terminateCmdParts arrayFlags, outp
 		return nil, err
 	}
 
-	program := program{cmd, terminateCmdParts, reader, make(chan int), output}
-	go func() {
-		exitStatus := program.forwardOutput()
-		program.writer.flush()
-		program.exitStatus <- exitStatus
-	}()
-
-	return &program, nil
+	return reader, nil
 }
 
 func (program program) forwardOutput() int {
@@ -126,7 +161,7 @@ func (program program) sendTermSignal() {
 
 func (program program) invokeCustomTerminateCmd() {
 	var terminateCmdPart arrayFlags
-	terminateProgram, err := startProgram(program.terminateCmdParts, &program.cmd.Dir, terminateCmdPart, program.writer)
+	terminateProgram, err := startProgram(program.terminateCmdParts, &program.cmd.Dir, program.usePty, terminateCmdPart, program.writer)
 	if err != nil {
 		return
 	}

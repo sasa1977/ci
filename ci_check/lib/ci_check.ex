@@ -96,7 +96,7 @@ defmodule CiCheck do
 
   defp cmd_opts(opts) do
     Keyword.merge(
-      [notify: self(), cd: cwd()],
+      [pty: true, notify: self(), cd: cwd()],
       opts
     )
   end

@@ -28,6 +28,12 @@ defmodule OsCmdTest do
         assert_receive {^pid, {:stopped, 0}}
       end
 
+      test "can use pty" do
+        pid = start_cmd!("echo 1", notify: self(), pty: true)
+        assert_receive {^pid, {:output, "1\r\n"}}
+        assert_receive {^pid, {:stopped, 0}}
+      end
+
       test "inherits environment" do
         System.put_env("FOO", "bar")
         pid = start_cmd!(~s/bash -c "echo $FOO"/, notify: self())
