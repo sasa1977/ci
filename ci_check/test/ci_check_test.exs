@@ -3,49 +3,52 @@ defmodule CiCheckTest do
 
   test "succeeds if all commands succeed" do
     OsCmd.stub(fn _, _ -> {:ok, 0, ""} end)
-    assert CiCheck.run() == :ok
+    assert {_, _} = run_check()
   end
 
   test "runs all commands" do
-    Enum.each(
-      [
-        "mix deps.get",
-        "mix compile --warnings-as-errors",
-        "mix format --check-formatted",
-        "mix test"
-      ],
-      &OsCmd.expect/1
-    )
+    {_output, executed_cmds} = run_check()
 
-    CiCheck.run()
-    Mox.verify!()
+    assert executed_cmds == %{
+             ci_check: [
+               "mix compile --warnings-as-errors",
+               "mix format --check-formatted",
+               "mix test"
+             ],
+             ci: [
+               "mix deps.get",
+               "mix compile --warnings-as-errors",
+               "mix format --check-formatted",
+               "mix test"
+             ]
+           }
   end
 
-  test "prints output of commands" do
-    output =
-      ExUnit.CaptureIO.capture_io(fn ->
-        OsCmd.stub(fn command, _ -> {:ok, 0, "output of #{command}\n"} end)
-        CiCheck.run()
-      end)
+  defp run_check do
+    test_pid = self()
 
-    assert output ==
-             """
-             output of mix deps.get
-             output of mix compile --warnings-as-errors
-             output of mix format --check-formatted
-             output of mix test
-             """
-  end
-
-  test "reports errors of unrelated commands in a single pass" do
-    OsCmd.stub(fn
-      "mix format --check-formatted", _ -> {:ok, 1, ""}
-      "mix test", _ -> {:ok, 2, ""}
-      _, _ -> {:ok, 0, ""}
+    OsCmd.stub(fn command, opts ->
+      send(test_pid, {:command, {Keyword.get(opts, :cd, "."), command}})
+      {:ok, 0, ""}
     end)
 
-    error = assert_raise(RuntimeError, fn -> CiCheck.run() == :ok end)
-    assert error.message =~ "mix format --check-formatted exited with status 1"
-    assert error.message =~ "mix test exited with status 2"
+    output = ExUnit.CaptureIO.capture_io(&CiCheck.run/0)
+
+    executed_cmds =
+      Stream.repeatedly(fn ->
+        receive do
+          {:command, command} -> command
+        after
+          0 -> nil
+        end
+      end)
+      |> Stream.take_while(&(not is_nil(&1)))
+      |> Stream.map(fn
+        {".", cmd} -> {:ci_check, cmd}
+        {"..", cmd} -> {:ci, cmd}
+      end)
+      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+
+    {output, executed_cmds}
   end
 end
