@@ -125,12 +125,13 @@ defmodule OsCmdTest do
       end
 
       test "terminates the program when the owner process dies" do
+        Process.flag(:trap_exit, true)
         on_exit(fn -> File.rm("test.txt") end)
 
         test_pid = self()
 
         {:ok, owner_pid} =
-          Agent.start_link(fn ->
+          Task.start_link(fn ->
             cmd_pid =
               start_cmd!("""
               bash -c "
@@ -142,13 +143,14 @@ defmodule OsCmdTest do
               """)
 
             send(test_pid, cmd_pid)
+            Process.sleep(:infinity)
           end)
 
         assert_receive cmd_pid
         Process.monitor(cmd_pid)
 
         Process.sleep(100)
-        Agent.stop(owner_pid)
+        Process.exit(owner_pid, :shutdown)
 
         assert_receive {:DOWN, _mref, :process, ^cmd_pid, _}
 
@@ -157,10 +159,11 @@ defmodule OsCmdTest do
         assert File.read!("test.txt") == contents
       end
 
+      @tag capture_log: true
       test "terminates the program if it doesn't complete in the given time" do
         Process.flag(:trap_exit, true)
         pid = start_cmd!("sleep 999999999", timeout: 1)
-        assert_receive {:EXIT, ^pid, :normal}
+        assert_receive {:EXIT, ^pid, :timeout}
       end
 
       @tag capture_log: true
@@ -200,12 +203,12 @@ defmodule OsCmdTest do
     describe "events stream" do
       test "returns the stream of messages" do
         pid = start_cmd!("echo 1")
-        assert Enum.to_list(OsCmd.events(pid)) == [output: "1\n", stopped: 0]
+        assert Enum.to_list(OsCmd.events(pid)) == [:starting, output: "1\n", stopped: 0]
       end
 
       test "leaves non-processed messages in the message queue" do
         pid = start_cmd!("echo 1")
-        assert Enum.take(OsCmd.events(pid), 1) == [output: "1\n"]
+        assert Enum.take(OsCmd.events(pid), 2) == [:starting, output: "1\n"]
         assert_receive {^pid, {:stopped, 0}}
       end
 
@@ -213,14 +216,15 @@ defmodule OsCmdTest do
         Process.flag(:trap_exit, true)
         pid = start_cmd!(~s/bash -c "echo 1; sleep 999999999"/)
 
-        events =
+        last_event =
           pid
           |> OsCmd.events()
           |> Enum.map(fn event ->
             with {:output, _} <- event, do: Process.exit(pid, :kill)
           end)
+          |> Enum.at(-1)
 
-        assert events == [true, {:terminated, :killed}]
+        assert last_event == {:terminated, :killed}
       end
     end
 
@@ -322,6 +326,20 @@ defmodule OsCmdTest do
       OsCmd.stub(fn _command, _opts -> {:ok, 0, "foo"} end)
       assert OsCmd.run("echo 1") == {:ok, "foo"}
       assert OsCmd.run("echo 1") == {:ok, "foo"}
+    end
+  end
+
+  describe "job action" do
+    test "can be started" do
+      OsCmd.stub(fn _command, _opts -> {:ok, 0, "foo"} end)
+      assert Job.run(fn -> Job.run_action({OsCmd, "foo"}) end) == {:ok, "foo"}
+    end
+
+    test "interprets non-zero exit status as error" do
+      OsCmd.stub(fn _command, _opts -> {:ok, 1, "some error"} end)
+      assert {:error, %OsCmd.Error{} = error} = Job.run(fn -> Job.run_action({OsCmd, "foo"}) end)
+      assert error.message =~ "foo exited with status 1"
+      assert error.message =~ "some error"
     end
   end
 

@@ -30,10 +30,11 @@ defmodule OsCmd.Port do
 
         {^port, {:data, "not started " <> error}} ->
           Port.close(port)
-          {:error, %OsCmd.Error{message: error}}
+          {:error, %OsCmd.Error{message: "#{Enum.join(cmd_args, " ")} failed: #{error}"}}
 
         {^port, {:exit_status, _exit_status}} ->
-          {:error, %OsCmd.Error{message: "unexpected port exit"}}
+          {:error,
+           %OsCmd.Error{message: "#{Enum.join(cmd_args, " ")} failed: unexpected port exit"}}
       end
     end
   end

@@ -23,7 +23,7 @@ defmodule Ci.MixProject do
     [
       {:mox, "~> 1.0"},
       {:nimble_parsec, "~> 1.1"},
-      {:parent, "~> 0.11"}
+      {:parent, github: "sasa1977/parent"}
     ]
   end
 end

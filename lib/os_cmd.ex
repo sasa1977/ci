@@ -76,6 +76,7 @@ defmodule OsCmd do
     |> Enum.reduce(
       %{output: [], exit_status: nil},
       fn
+        :starting, acc -> acc
         {:output, output}, acc -> update_in(acc.output, &[&1, output])
         {:stopped, exit_status}, acc -> %{acc | exit_status: exit_status}
         {:terminated, reason}, acc -> %{acc | exit_status: reason}
@@ -95,6 +96,8 @@ defmodule OsCmd do
   def init({cmd, opts}) do
     Process.flag(:trap_exit, true)
 
+    Keyword.fetch!(opts, :handler).(:starting)
+
     with {:ok, timeout} <- Keyword.fetch(opts, :timeout),
          do: Process.send_after(self(), :timeout, timeout)
 
@@ -113,7 +116,7 @@ defmodule OsCmd do
         {:ok,
          %{
            port: port,
-           handler: Keyword.get(opts, :handler),
+           handler: Keyword.fetch!(opts, :handler),
            propagate_exit?: Keyword.get(opts, :propagate_exit?, false),
            buffer: ""
          }}
@@ -134,7 +137,7 @@ defmodule OsCmd do
     {:noreply, state}
   end
 
-  def handle_info(:timeout, state), do: stop_server(state, :timeout)
+  def handle_info(:timeout, state), do: {:stop, :timeout, state}
 
   @impl GenServer
   def handle_continue({:stop, exit_status}, state) do
@@ -151,18 +154,13 @@ defmodule OsCmd do
   def terminate(_reason, state), do: stop_program(state)
 
   defp normalize_opts(opts) do
-    handler =
-      opts
-      |> Keyword.get_values(:notify)
-      |> Enum.reduce(
-        Keyword.get(opts, :handler),
-        fn pid, handler ->
-          fn message ->
-            send(pid, {self(), message})
-            handler && handler.(message)
-          end
-        end
-      )
+    all_handlers = Keyword.get_values(opts, :handler)
+    all_subscribers = Keyword.get_values(opts, :notify)
+
+    handler = fn message ->
+      Enum.each(all_handlers, & &1.(message))
+      Enum.each(all_subscribers, &send(&1, {self(), message}))
+    end
 
     env =
       opts
@@ -212,6 +210,37 @@ defmodule OsCmd do
     end)
     |> Enum.find(&is_nil/1)
   end
+
+  @doc false
+  def job_action_spec({cmd, opts}) do
+    caller = self()
+
+    Supervisor.child_spec(
+      {__MODULE__, {cmd, [handler: &handle_event(&1, cmd, caller)] ++ opts}},
+      []
+    )
+  end
+
+  def job_action_spec(cmd), do: job_action_spec({cmd, []})
+
+  defp handle_event({:output, output}, _cmd, _caller),
+    do: Process.put({__MODULE__, :output}, [Process.get({__MODULE__, :output}, []), output])
+
+  defp handle_event({:stopped, exit_status}, cmd, caller) do
+    output = to_string(Process.get({__MODULE__, :output}, []))
+
+    response =
+      if exit_status == 0 do
+        {:ok, output}
+      else
+        message = "#{cmd} exited with status #{exit_status}:\n\n#{output}"
+        {:error, %OsCmd.Error{exit_status: exit_status, message: message}}
+      end
+
+    Job.respond(caller, response)
+  end
+
+  defp handle_event(_event, _cmd, _caller), do: :ok
 
   defmodule Program do
     @moduledoc false
