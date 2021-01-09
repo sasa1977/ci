@@ -3,7 +3,11 @@ defmodule Mix.Tasks.Ci.CheckTest do
   alias Mix.Tasks.Ci.Check
 
   test "performs all checks" do
-    assert run_check() == {:ok, ["mix test", "mix format --check-formatted"]}
+    assert run_check() == :ok
+
+    assert_receive {:command, "mix compile --warnings-as-errors"}
+    assert_receive {:command, "mix test"}
+    assert_receive {:command, "mix format --check-formatted"}
   end
 
   test "reports error" do
@@ -31,17 +35,6 @@ defmodule Mix.Tasks.Ci.CheckTest do
 
     ExUnit.CaptureIO.capture_io(fn -> send(self(), {:result, Check.run(nil)}) end)
     assert_receive {:result, result}
-
-    executed_cmds =
-      Stream.repeatedly(fn ->
-        receive do
-          {:command, command} -> command
-        after
-          0 -> nil
-        end
-      end)
-      |> Enum.take_while(&(not is_nil(&1)))
-
-    {result, executed_cmds}
+    result
   end
 end

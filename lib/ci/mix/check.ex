@@ -11,8 +11,12 @@ defmodule Mix.Tasks.Ci.Check do
       {Pipeline,
        {:parallel,
         [
-          cmd("mix test"),
-          cmd("mix format --check-formatted")
+          cmd("mix format --check-formatted"),
+          {:sequence,
+           [
+             cmd("mix compile --warnings-as-errors"),
+             cmd("mix test")
+           ]}
         ]}},
       timeout: :timer.minutes(10)
     )
