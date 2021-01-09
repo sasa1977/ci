@@ -5,7 +5,7 @@ defmodule Mix.Tasks.Ci.Check do
 
   @impl Mix.Task
   def run(_args) do
-    Mix.Task.run("app.start")
+    {:ok, _} = Application.ensure_all_started(:ci)
 
     Job.run(
       {Pipeline,
