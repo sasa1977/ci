@@ -1,7 +1,11 @@
 defmodule Job do
   use Parent.GenServer
 
-  def start_link({root_action, opts}) when root_action not in ~w/sequence parallel/a do
+  def start_link(root_action, opts) do
+    start_link({root_action, opts})
+  end
+
+  def start_link({root_action, opts}) do
     {gen_server_opts, opts} = Keyword.split(opts, ~w/name/a)
 
     opts =
@@ -19,7 +23,7 @@ defmodule Job do
   def start_link(root_action), do: start_link({root_action, []})
 
   def run(root_action, opts \\ []) do
-    with {:ok, pid} <- start_link({root_action, Keyword.merge(opts, respond?: true)}),
+    with {:ok, pid} <- start_link(root_action, Keyword.merge(opts, respond?: true)),
          do: await(pid)
   end
 
@@ -48,9 +52,9 @@ defmodule Job do
   def respond(pid, response), do: respond(pid, response, [])
 
   @impl GenServer
-  def init({fun_or_mfa, opts}) do
+  def init({root_action, opts}) do
     case Parent.start_child(
-           task_spec(fun_or_mfa, respond_to: opts.respond_to, from: self()),
+           task_spec(root_action, respond_to: opts.respond_to, from: self()),
            id: :main,
            restart: :temporary,
            ephemeral?: true,
@@ -81,10 +85,6 @@ defmodule Job do
 
   defp action_spec(fun) when is_function(fun, 0), do: task_spec(fun)
   defp action_spec({_module, _fun, _args} = mfa), do: task_spec(mfa)
-
-  defp action_spec({type, _} = pipeline) when type in ~w/sequence parallel/a,
-    do: task_spec(pipeline)
-
   defp action_spec({module, arg}), do: action_spec(module.job_action_spec(arg))
   defp action_spec(module) when is_atom(module), do: action_spec({module, []})
   defp action_spec(%{} = spec), do: spec
@@ -98,48 +98,7 @@ defmodule Job do
 
   defp invoke(fun) when is_function(fun, 0), do: fun.()
   defp invoke({module, function, args}), do: apply(module, function, args)
-  defp invoke({:sequence, actions}), do: run_sequence(actions)
-  defp invoke({:parallel, actions}), do: run_parallel(actions)
-
-  defp run_sequence(actions) do
-    result =
-      Enum.reduce_while(
-        actions,
-        [],
-        fn action, previous_results ->
-          result =
-            with {:ok, pid} <- start_action(action, timeout: :infinity),
-                 do: await_pipeline_action(pid)
-
-          case result do
-            {:ok, result} -> {:cont, [result | previous_results]}
-            {:error, _} = error -> {:halt, error}
-          end
-        end
-      )
-
-    with results when is_list(results) <- result, do: {:ok, Enum.reverse(results)}
-  end
-
-  defp run_parallel(actions) do
-    actions
-    |> Enum.map(&start_action(&1, timeout: :infinity))
-    |> Enum.map(&with {:ok, pid} <- &1, do: await_pipeline_action(pid))
-    |> Enum.split_with(&match?({:ok, _}, &1))
-    |> case do
-      {successess, []} -> {:ok, Enum.map(successess, fn {:ok, result} -> result end)}
-      {_, errors} -> {:error, Enum.map(errors, fn {_, result} -> result end)}
-    end
-  end
-
-  defp await_pipeline_action(pid) do
-    case Job.await(pid) do
-      {:ok, _} = success -> success
-      {:error, _} = error -> error
-      {:exit, reason} -> {:error, reason}
-      _other -> raise "Pipeline action must return `{:ok, result} | {:error, reason}`"
-    end
-  end
+  defp invoke({module, arg}), do: module.run(arg)
 
   defp send_exit_response(from, reason, meta) do
     if reason != :normal, do: respond(meta.respond_to, {:exit, reason}, from: from)

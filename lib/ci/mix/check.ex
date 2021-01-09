@@ -1,16 +1,19 @@
 defmodule Mix.Tasks.Ci.Check do
   use Mix.Task
 
+  alias Job.Pipeline
+
   @impl Mix.Task
   def run(_args) do
     Mix.Task.run("app.start")
 
     Job.run(
-      {:parallel,
-       [
-         cmd("mix test"),
-         cmd("mix format --check-formatted")
-       ]},
+      {Pipeline,
+       {:parallel,
+        [
+          cmd("mix test"),
+          cmd("mix format --check-formatted")
+        ]}},
       timeout: :timer.minutes(10)
     )
     |> report_errors()
