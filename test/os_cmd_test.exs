@@ -1,4 +1,5 @@
 defmodule OsCmdTest do
+  # sync because of log capture
   use ExUnit.Case, async: false
 
   with {:error, _} <- OsCmd.Port.executable(), do: @moduletag(skip: true)

@@ -1,4 +1,5 @@
 defmodule JobTest do
+  # sync because of log capture
   use ExUnit.Case, async: false
 
   describe "job" do

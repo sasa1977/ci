@@ -1,4 +1,5 @@
 defmodule Mix.Tasks.Ci.CheckTest do
+  # sync because of IO capture
   use ExUnit.Case, async: false
   alias Mix.Tasks.Ci.Check
 
