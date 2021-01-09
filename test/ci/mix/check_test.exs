@@ -3,7 +3,7 @@ defmodule Mix.Tasks.Ci.CheckTest do
   alias Mix.Tasks.Ci.Check
 
   test "performs all checks" do
-    assert run_check() == :ok
+    assert run_checks() == :ok
 
     assert_receive {:command, "mix compile --warnings-as-errors"}
     assert_receive {:command, "mix test"}
@@ -15,7 +15,7 @@ defmodule Mix.Tasks.Ci.CheckTest do
       Mix.Error,
       ~r/mix test exited with status 1.*mix test output/s,
       fn ->
-        run_check(
+        run_checks(
           cmd_stub: fn
             "mix test" -> {:ok, 1, "mix test output"}
             _ -> {:ok, 0, ""}
@@ -25,7 +25,7 @@ defmodule Mix.Tasks.Ci.CheckTest do
     )
   end
 
-  defp run_check(opts \\ []) do
+  defp run_checks(opts \\ []) do
     test_pid = self()
 
     OsCmd.stub(fn command, _opts ->
