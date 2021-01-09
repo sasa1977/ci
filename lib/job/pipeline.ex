@@ -1,8 +1,6 @@
 defmodule Job.Pipeline do
-  def job_action_spec(pipeline) do
-    caller = self()
-    Supervisor.child_spec({Task, fn -> Job.respond(caller, run(pipeline)) end}, [])
-  end
+  def job_action_spec(responder, pipeline),
+    do: {Task, fn -> responder.(run(pipeline)) end}
 
   def run({:sequence, actions}) do
     result =

@@ -14,7 +14,7 @@ defmodule JobTest do
     end
 
     test "can be awaited on" do
-      {:ok, job} = Job.start_link({fn -> :foo end, respond?: true})
+      {:ok, job} = Job.start_link(fn -> :foo end, respond?: true)
       assert Job.await(job) == :foo
     end
 
@@ -24,6 +24,10 @@ defmodule JobTest do
 
     test "accepts MFA" do
       assert Job.run({Kernel, :abs, [-1]}) == 1
+    end
+
+    test "accepts childspec factory function" do
+      assert Job.run(&{Task, fn -> &1.(:foo) end}) == :foo
     end
 
     @tag capture_log: true
@@ -36,7 +40,7 @@ defmodule JobTest do
     @tag capture_log: true
     test "always stops with reason `normal` if response is being sent back" do
       Process.flag(:trap_exit, true)
-      assert {:ok, job} = Job.start_link({fn -> exit(:foo) end, respond?: true})
+      assert {:ok, job} = Job.start_link(fn -> exit(:foo) end, respond?: true)
       refute_receive {:EXIT, ^job, :foo}
     end
 
@@ -48,7 +52,7 @@ defmodule JobTest do
     @tag capture_log: true
     test "can be timed out" do
       Process.flag(:trap_exit, true)
-      assert {:ok, job} = Job.start_link({fn -> Process.sleep(:infinity) end, timeout: 1})
+      assert {:ok, job} = Job.start_link(fn -> Process.sleep(:infinity) end, timeout: 1)
       assert_receive {:EXIT, ^job, :timeout}
     end
   end
@@ -82,6 +86,19 @@ defmodule JobTest do
         end)
 
       assert res == {:res, {:exit, :timeout}}
+    end
+  end
+
+  describe "child_spec" do
+    test "accepts action" do
+      caller = self()
+      start_supervised!({Job, fn -> send(caller, :foo) end}, restart: :temporary)
+      assert_receive :foo
+    end
+
+    test "accepts action and opts" do
+      job = start_supervised!({Job, {fn -> :foo end, respond_to: self()}})
+      assert Job.await(job) == :foo
     end
   end
 end

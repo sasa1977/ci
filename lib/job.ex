@@ -1,11 +1,7 @@
 defmodule Job do
   use Parent.GenServer
 
-  def start_link(root_action, opts) do
-    start_link({root_action, opts})
-  end
-
-  def start_link({root_action, opts}) do
+  def start_link(action, opts \\ []) do
     {gen_server_opts, opts} = Keyword.split(opts, ~w/name/a)
 
     opts =
@@ -17,13 +13,17 @@ defmodule Job do
       end
       |> Enum.into(%{timeout: :timer.seconds(5), respond_to: nil})
 
-    Parent.GenServer.start_link(__MODULE__, {root_action, opts}, gen_server_opts)
+    Parent.GenServer.start_link(__MODULE__, {action, opts}, gen_server_opts)
   end
 
-  def start_link(root_action), do: start_link({root_action, []})
+  @doc false
+  def child_spec({action, opts}),
+    do: Parent.parent_spec(id: __MODULE__, start: {__MODULE__, :start_link, [action, opts]})
 
-  def run(root_action, opts \\ []) do
-    with {:ok, pid} <- start_link(root_action, Keyword.merge(opts, respond?: true)),
+  def child_spec(action), do: child_spec({action, []})
+
+  def run(action, opts \\ []) do
+    with {:ok, pid} <- start_link(action, Keyword.merge(opts, respond?: true)),
          do: await(pid)
   end
 
@@ -34,7 +34,9 @@ defmodule Job do
   end
 
   def start_action(action, opts \\ []) do
-    Parent.Client.start_child(parent(), action_spec(action),
+    Parent.Client.start_child(
+      parent(),
+      action_spec(action, responder(self())),
       id: nil,
       binds_to: [self()],
       restart: :temporary,
@@ -52,9 +54,9 @@ defmodule Job do
   def respond(pid, response), do: respond(pid, response, [])
 
   @impl GenServer
-  def init({root_action, opts}) do
+  def init({action, opts}) do
     case Parent.start_child(
-           task_spec(root_action, respond_to: opts.respond_to, from: self()),
+           action_spec(action, responder(opts.respond_to, from: self())),
            id: :main,
            restart: :temporary,
            ephemeral?: true,
@@ -83,32 +85,28 @@ defmodule Job do
     {:noreply, state}
   end
 
-  defp action_spec(fun) when is_function(fun, 0), do: task_spec(fun)
-  defp action_spec({_module, _fun, _args} = mfa), do: task_spec(mfa)
-  defp action_spec({module, arg}), do: action_spec(module.job_action_spec(arg))
-  defp action_spec(module) when is_atom(module), do: action_spec({module, []})
-  defp action_spec(%{} = spec), do: spec
+  defp action_spec(fun, responder) when is_function(fun, 0), do: task_spec(fun, responder)
+  defp action_spec({_module, _fun, _args} = mfa, responder), do: task_spec(mfa, responder)
+  defp action_spec(fun, responder) when is_function(fun, 1), do: fun.(responder)
+  defp action_spec({module, arg}, responder), do: module.job_action_spec(responder, arg)
 
-  defp action_spec(other), do: raise("Unknown action spec: #{inspect(other)}")
-
-  defp task_spec(invocable, opts \\ []) do
-    respond_to = Keyword.get(opts, :respond_to, self())
-    {Task, fn -> respond(respond_to, invoke(invocable), opts) end}
-  end
+  defp task_spec(invocable, responder), do: {Task, fn -> responder.(invoke(invocable)) end}
 
   defp invoke(fun) when is_function(fun, 0), do: fun.()
   defp invoke({module, function, args}), do: apply(module, function, args)
-  defp invoke({module, arg}), do: module.run(arg)
 
-  defp send_exit_response(from, reason, meta) do
-    if reason != :normal, do: respond(meta.respond_to, {:exit, reason}, from: from)
-  end
+  defp send_exit_response(from, reason, meta),
+    do: if(reason != :normal, do: respond(meta.respond_to, {:exit, reason}, from: from))
 
   defp parent, do: hd(Process.get(:"$ancestors"))
 
-  defp respond(pid, response, opts) do
-    unless is_nil(pid),
-      do: send(pid, {__MODULE__, :response, Keyword.get(opts, :from, self()), response})
+  defp responder(respond_to, opts \\ []),
+    do: &respond(respond_to, &1, opts)
+
+  defp respond(server, response, opts) do
+    with server when not is_nil(server) <- server,
+         pid when not is_nil(pid) <- GenServer.whereis(server),
+         do: send(pid, {__MODULE__, :response, Keyword.get(opts, :from, self()), response})
 
     :ok
   end

@@ -212,21 +212,19 @@ defmodule OsCmd do
   end
 
   @doc false
-  def job_action_spec({cmd, opts}) do
-    caller = self()
-
+  def job_action_spec(responder, {cmd, opts}) do
     Supervisor.child_spec(
-      {__MODULE__, {cmd, [handler: &handle_event(&1, cmd, caller)] ++ opts}},
+      {__MODULE__, {cmd, [handler: &handle_event(&1, cmd, responder)] ++ opts}},
       []
     )
   end
 
-  def job_action_spec(cmd), do: job_action_spec({cmd, []})
+  def job_action_spec(responder, cmd), do: job_action_spec(responder, {cmd, []})
 
-  defp handle_event({:output, output}, _cmd, _caller),
+  defp handle_event({:output, output}, _cmd, _responder),
     do: Process.put({__MODULE__, :output}, [Process.get({__MODULE__, :output}, []), output])
 
-  defp handle_event({:stopped, exit_status}, cmd, caller) do
+  defp handle_event({:stopped, exit_status}, cmd, responder) do
     output = to_string(Process.get({__MODULE__, :output}, []))
 
     response =
@@ -237,7 +235,7 @@ defmodule OsCmd do
         {:error, %OsCmd.Error{exit_status: exit_status, message: message}}
       end
 
-    Job.respond(caller, response)
+    responder.(response)
   end
 
   defp handle_event(_event, _cmd, _caller), do: :ok
