@@ -6,13 +6,40 @@ defmodule OsCmd do
     defexception [:message, :exit_status]
   end
 
+  @type start_opts :: [
+          name: GenServer.name(),
+          handler: (event -> any),
+          notify: pid(),
+          timeout: pos_integer() | :infinity,
+          cd: String.t(),
+          env: [{String.t(), String.t()}],
+          use_pty: boolean,
+          terminate_cmd: String.t()
+        ]
+
+  @type event ::
+          :starting
+          | {:output, output}
+          | {:stopped, exit_status}
+          | {:terminated, reason :: any}
+
+  @type mock ::
+          String.t()
+          | (command :: String.t(), start_opts -> {:ok, output} | {:error, exit_status, output})
+
+  @type output :: String.t()
+  @type exit_status :: non_neg_integer()
+
+  @spec start_link(String.t()) :: GenServer.on_start()
   def start_link(command) when is_binary(command), do: start_link({command, []})
 
+  @spec start_link({String.t(), start_opts}) :: GenServer.on_start()
   def start_link({command, opts}) do
     opts = normalize_opts(opts)
     GenServer.start_link(__MODULE__, {command, opts}, Keyword.take(opts, [:name]))
   end
 
+  @spec stop(GenServer.name(), :infinity | pos_integer()) :: :ok
   def stop(server, timeout \\ :infinity) do
     pid = GenServer.whereis(server)
     mref = Process.monitor(pid)
@@ -25,6 +52,7 @@ defmodule OsCmd do
     end
   end
 
+  @spec events(pid | {name, node} | name) :: Enumerable.t() when name: atom
   def events(server) do
     Stream.resource(
       fn -> Process.monitor(server) end,
@@ -52,6 +80,7 @@ defmodule OsCmd do
     )
   end
 
+  @spec run(String.t(), start_opts()) :: {:ok, output} | {:error, exit_status | term(), output}
   def run(cmd, opts \\ []) do
     start_arg = {cmd, [notify: self()] ++ opts}
 
@@ -70,6 +99,10 @@ defmodule OsCmd do
     end
   end
 
+  @spec await(pid | {name, node} | name) ::
+          {:ok, output :: String.t()}
+          | {:error, exit_status :: pos_integer() | term(), output :: String.t()}
+        when name: atom
   def await(pid) do
     pid
     |> events()
@@ -88,8 +121,13 @@ defmodule OsCmd do
     end
   end
 
+  @spec allow(pid) :: :ok
   def allow(pid), do: Faker.allow(pid)
+
+  @spec expect(mock) :: :ok
   def expect(fun), do: Faker.expect(fun)
+
+  @spec stub(mock) :: :ok
   def stub(fun), do: Faker.stub(fun)
 
   @impl GenServer

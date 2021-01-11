@@ -31,11 +31,13 @@ defmodule OsCmd.Faker do
   def expect(fun) do
     allow(self())
     Mox.expect(__MODULE__.Port, :start, start_handler(fun))
+    :ok
   end
 
   def stub(fun) do
     allow(self())
     Mox.stub(__MODULE__.Port, :start, start_handler(fun))
+    :ok
   end
 
   def start_handler(command) when is_binary(command),
