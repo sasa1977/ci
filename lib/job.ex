@@ -34,16 +34,18 @@ defmodule Job do
   end
 
   def start_action(action, opts \\ []) do
-    Parent.Client.start_child(
-      parent(),
-      action_spec(action, responder(self())),
-      id: nil,
-      binds_to: [self()],
-      restart: :temporary,
-      ephemeral?: true,
-      timeout: Keyword.get(opts, :timeout, :timer.seconds(5)),
-      meta: %{respond_to: self()}
-    )
+    overrides =
+      [timeout: :timer.seconds(5)]
+      |> Keyword.merge(opts)
+      |> Keyword.merge(
+        id: nil,
+        binds_to: [self()],
+        restart: :temporary,
+        ephemeral?: true,
+        meta: %{respond_to: self()}
+      )
+
+    Parent.Client.start_child(parent(), action_spec(action, responder(self())), overrides)
   end
 
   def run_action(action, opts \\ []) do
