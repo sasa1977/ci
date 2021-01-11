@@ -77,7 +77,9 @@ defmodule Job do
   defp action_spec(fun, responder) when is_function(fun, 0), do: task_spec(fun, responder)
   defp action_spec({_module, _fun, _args} = mfa, responder), do: task_spec(mfa, responder)
   defp action_spec(fun, responder) when is_function(fun, 1), do: fun.(responder)
-  defp action_spec({module, arg}, responder), do: module.job_action_spec(responder, arg)
+
+  defp action_spec({module, arg}, responder),
+    do: Supervisor.child_spec(module.job_action_spec(responder, arg), [])
 
   defp task_spec(invocable, responder), do: {Task, fn -> responder.(invoke(invocable)) end}
 

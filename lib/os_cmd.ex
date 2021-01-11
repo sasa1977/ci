@@ -212,12 +212,8 @@ defmodule OsCmd do
   end
 
   @doc false
-  def job_action_spec(responder, {cmd, opts}) do
-    Supervisor.child_spec(
-      {__MODULE__, {cmd, [handler: &handle_event(&1, cmd, responder)] ++ opts}},
-      []
-    )
-  end
+  def job_action_spec(responder, {cmd, opts}),
+    do: {__MODULE__, {cmd, [handler: &handle_event(&1, cmd, responder)] ++ opts}}
 
   def job_action_spec(responder, cmd), do: job_action_spec(responder, {cmd, []})
 
