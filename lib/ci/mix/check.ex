@@ -24,11 +24,14 @@ defmodule Mix.Tasks.Ci.Check do
   defp report_errors({:error, errors}) do
     [errors]
     |> List.flatten()
-    |> Enum.map(& &1.message)
+    |> Enum.map(&message/1)
     |> Enum.join("\n\n")
     |> to_string()
     |> Mix.raise()
   end
+
+  defp message(%OsCmd.Error{message: message}), do: message
+  defp message(other), do: inspect(other)
 
   defp mix(arg, opts \\ []),
     do: cmd("mix #{arg}", Config.Reader.merge([env: [mix_env: "test"]], opts))
