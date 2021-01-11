@@ -11,13 +11,8 @@ defmodule Mix.Tasks.Ci.Check do
       {Pipeline,
        {:sequence,
         [
-          cmd("mix compile --warnings-as-errors"),
-          {:parallel,
-           [
-             cmd("mix dialyzer"),
-             cmd("mix test"),
-             cmd("mix format --check-formatted")
-           ]}
+          mix("compile --warnings-as-errors"),
+          {:parallel, [mix("dialyzer"), mix("test"), mix("format --check-formatted")]}
         ]}},
       timeout: :timer.minutes(10)
     )
@@ -35,7 +30,9 @@ defmodule Mix.Tasks.Ci.Check do
     |> Mix.raise()
   end
 
-  defp cmd(cmd, opts \\ []) do
+  defp mix(arg, opts \\ []), do: cmd("mix #{arg}", opts)
+
+  defp cmd(cmd, opts) do
     handler = &log(message(&1, cmd))
     cmd_opts = [handler: handler] ++ Keyword.merge([pty: true, env: [{"MIX_ENV", "test"}]], opts)
     {OsCmd, {cmd, cmd_opts}}
