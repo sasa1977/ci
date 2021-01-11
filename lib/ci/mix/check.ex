@@ -9,13 +9,14 @@ defmodule Mix.Tasks.Ci.Check do
 
     Job.run(
       {Pipeline,
-       {:parallel,
+       {:sequence,
         [
-          cmd("mix format --check-formatted"),
-          {:sequence,
+          cmd("mix compile --warnings-as-errors"),
+          {:parallel,
            [
-             cmd("mix compile --warnings-as-errors"),
-             cmd("mix test")
+             cmd("mix dialyzer"),
+             cmd("mix test"),
+             cmd("mix format --check-formatted")
            ]}
         ]}},
       timeout: :timer.minutes(10)
