@@ -79,6 +79,7 @@ defmodule JobTest do
       assert res == 3
     end
 
+    @tag capture_log: true
     test "can be timed out" do
       res =
         Job.run(fn ->
@@ -87,6 +88,63 @@ defmodule JobTest do
         end)
 
       assert res == {:res, {:exit, :timeout}}
+    end
+
+    @tag capture_log: true
+    test "crash is converted into an exit error" do
+      res =
+        Job.run(fn ->
+          res = Job.run_action(fn -> exit("foo") end)
+          {:res, res}
+        end)
+
+      assert res == {:res, {:exit, "foo"}}
+    end
+
+    @tag capture_log: true
+    test "crash takes down child actions" do
+      test_pid = self()
+
+      res =
+        Job.run(fn ->
+          {:ok, non_crashed_action} =
+            Job.start_action(fn ->
+              Process.sleep(100)
+              :ok
+            end)
+
+          Job.run_action(fn ->
+            Job.start_action(fn ->
+              Process.flag(:trap_exit, true)
+              send(test_pid, {:child_pid, self()})
+
+              receive do
+                {:EXIT, _parent, :shutdown} -> :ok
+              end
+            end)
+
+            Job.start_action(
+              fn ->
+                Process.flag(:trap_exit, true)
+                send(test_pid, {:child_pid, self()})
+                Process.sleep(:infinity)
+              end,
+              shutdown: :brutal_kill
+            )
+
+            raise "foo"
+          end)
+
+          Job.await(non_crashed_action)
+        end)
+
+      assert res == :ok
+
+      for _ <- 1..2 do
+        assert_receive {:child_pid, child_pid}
+        mref = Process.monitor(child_pid)
+        assert_receive {:DOWN, ^mref, :process, ^child_pid, _}
+      end
     end
   end
 
