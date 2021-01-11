@@ -52,6 +52,11 @@ defmodule OsCmdTest do
         assert_receive {^pid, {:output, "baz\n"}}
       end
 
+      test "accepts atom as env name" do
+        pid = start_cmd!(~s/bash -c "echo $BAR"/, notify: self(), env: [bar: "baz"])
+        assert_receive {^pid, {:output, "baz\n"}}
+      end
+
       test "unsets environment" do
         System.put_env("FOO", "bar")
         pid = start_cmd!(~s/bash -c "echo $FOO"/, notify: self(), env: [{"FOO", nil}])

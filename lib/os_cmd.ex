@@ -12,7 +12,7 @@ defmodule OsCmd do
           notify: pid(),
           timeout: pos_integer() | :infinity,
           cd: String.t(),
-          env: [{String.t(), String.t()}],
+          env: [{String.t() | atom, String.t() | nil}],
           use_pty: boolean,
           terminate_cmd: String.t()
         ]
@@ -204,12 +204,17 @@ defmodule OsCmd do
       opts
       |> Keyword.get(:env, [])
       |> Enum.map(fn
-        {name, nil} -> {to_charlist(name), false}
-        {name, value} -> {to_charlist(name), to_charlist(value)}
+        {name, nil} -> {env_name_to_charlist(name), false}
+        {name, value} -> {env_name_to_charlist(name), to_charlist(value)}
       end)
 
     Keyword.merge(opts, handler: handler, env: env)
   end
+
+  defp env_name_to_charlist(atom) when is_atom(atom),
+    do: atom |> to_string() |> String.upcase() |> to_charlist()
+
+  defp env_name_to_charlist(name), do: to_charlist(name)
 
   defp stop_server(%{propagate_exit?: false} = state, _exit_reason), do: {:stop, :normal, state}
   defp stop_server(state, reason), do: {:stop, reason, state}

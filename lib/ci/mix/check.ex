@@ -30,11 +30,12 @@ defmodule Mix.Tasks.Ci.Check do
     |> Mix.raise()
   end
 
-  defp mix(arg, opts \\ []), do: cmd("mix #{arg}", opts)
+  defp mix(arg, opts \\ []),
+    do: cmd("mix #{arg}", Config.Reader.merge([env: [mix_env: "test"]], opts))
 
   defp cmd(cmd, opts) do
     handler = &log(message(&1, cmd))
-    cmd_opts = [handler: handler] ++ Keyword.merge([pty: true, env: [{"MIX_ENV", "test"}]], opts)
+    cmd_opts = [handler: handler] ++ Keyword.merge([pty: true], opts)
     {OsCmd, {cmd, cmd_opts}}
   end
 
