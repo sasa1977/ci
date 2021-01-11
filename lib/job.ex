@@ -11,7 +11,6 @@ defmodule Job do
         {false, _opts} -> opts
         {true, opts} -> Keyword.merge(opts, respond_to: self())
       end
-      |> Enum.into(%{timeout: :timer.seconds(5), respond_to: nil})
 
     Parent.GenServer.start_link(__MODULE__, {action, opts}, gen_server_opts)
   end
@@ -34,18 +33,9 @@ defmodule Job do
   end
 
   def start_action(action, opts \\ []) do
-    overrides =
-      [timeout: :timer.seconds(5)]
-      |> Keyword.merge(opts)
-      |> Keyword.merge(
-        id: nil,
-        binds_to: [self()],
-        restart: :temporary,
-        ephemeral?: true,
-        meta: %{respond_to: self()}
-      )
-
-    Parent.Client.start_child(parent(), action_spec(action, responder(self())), overrides)
+    action_spec = action_spec(action, responder(self()))
+    child_overrides = child_overrides(opts, self(), id: nil, binds_to: [self()])
+    Parent.Client.start_child(parent(), action_spec, child_overrides)
   end
 
   def run_action(action, opts \\ []) do
@@ -57,15 +47,12 @@ defmodule Job do
 
   @impl GenServer
   def init({action, opts}) do
-    case Parent.start_child(
-           action_spec(action, responder(opts.respond_to, from: self())),
-           id: :main,
-           restart: :temporary,
-           ephemeral?: true,
-           timeout: opts.timeout,
-           meta: %{respond_to: opts.respond_to}
-         ) do
-      {:ok, _pid} -> {:ok, opts}
+    {respond_to, opts} = Keyword.pop(opts, :respond_to)
+    action_spec = action_spec(action, responder(respond_to, from: self()))
+    child_overrides = child_overrides(opts, respond_to, id: :main)
+
+    case Parent.start_child(action_spec, child_overrides) do
+      {:ok, _pid} -> {:ok, nil}
       {:error, reason} -> {:stop, reason}
     end
   end
@@ -73,7 +60,7 @@ defmodule Job do
   @impl Parent.GenServer
   def handle_stopped_children(%{main: %{exit_reason: reason, meta: meta}}, state) do
     send_exit_response(self(), reason, meta)
-    exit_reason = if is_nil(state.respond_to), do: reason, else: :normal
+    exit_reason = if is_nil(meta.respond_to), do: reason, else: :normal
     {:stop, exit_reason, state}
   end
 
@@ -111,5 +98,12 @@ defmodule Job do
          do: send(pid, {__MODULE__, :response, Keyword.get(opts, :from, self()), response})
 
     :ok
+  end
+
+  defp child_overrides(overrides, respond_to, extra_overrides) do
+    [timeout: :timer.seconds(5)]
+    |> Keyword.merge(overrides)
+    |> Keyword.merge(extra_overrides)
+    |> Keyword.merge(meta: %{respond_to: respond_to}, restart: :temporary, ephemeral?: true)
   end
 end
