@@ -1,7 +1,11 @@
 defmodule Job.Pipeline do
+  @type pipeline :: {:sequence | :parallel, [Job.action() | pipeline]}
+
+  @doc false
   def job_action_spec(responder, pipeline),
     do: {Task, fn -> responder.(run(pipeline)) end}
 
+  @spec run(pipeline) :: {:ok, [result :: any]} | {:error, [error :: any]}
   def run({:sequence, actions}) do
     result =
       Enum.reduce_while(
