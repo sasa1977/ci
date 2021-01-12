@@ -40,9 +40,9 @@ defmodule OsCmd do
     GenServer.start_link(__MODULE__, {command, opts}, Keyword.take(opts, [:name]))
   end
 
-  @spec stop(GenServer.name(), :infinity | pos_integer()) :: :ok
+  @spec stop(GenServer.server(), :infinity | pos_integer()) :: :ok
   def stop(server, timeout \\ :infinity) do
-    pid = GenServer.whereis(server)
+    pid = whereis!(server)
     mref = Process.monitor(pid)
     GenServer.cast(pid, :stop)
 
@@ -53,24 +53,26 @@ defmodule OsCmd do
     end
   end
 
-  @spec events(pid | {name, node} | name) :: Enumerable.t() when name: atom
+  @spec events(GenServer.server()) :: Enumerable.t()
   def events(server) do
+    pid = GenServer.whereis(server)
+
     Stream.resource(
-      fn -> Process.monitor(server) end,
+      fn -> Process.monitor(pid) end,
       fn
         nil ->
           {:halt, nil}
 
         mref ->
           receive do
-            {^server, {:stopped, _} = stopped} ->
+            {^pid, {:stopped, _} = stopped} ->
               Process.demonitor(mref, [:flush])
               {[stopped], nil}
 
-            {^server, message} ->
+            {^pid, message} ->
               {[message], mref}
 
-            {:DOWN, ^mref, :process, ^server, reason} ->
+            {:DOWN, ^mref, :process, ^pid, reason} ->
               {[{:stopped, reason}], nil}
           end
       end,
@@ -101,12 +103,12 @@ defmodule OsCmd do
     end
   end
 
-  @spec await(pid | {name, node} | name) ::
+  @spec await(GenServer.server()) ::
           {:ok, output :: String.t()}
           | {:error, exit_status :: pos_integer() | term(), output :: String.t()}
-        when name: atom
-  def await(pid) do
-    pid
+  def await(server) do
+    server
+    |> whereis!()
     |> events()
     |> Enum.reduce(
       %{output: [], exit_status: nil},
@@ -122,8 +124,8 @@ defmodule OsCmd do
     end
   end
 
-  @spec allow(pid) :: :ok
-  def allow(pid), do: Faker.allow(pid)
+  @spec allow(GenServer.server()) :: :ok
+  def allow(server), do: Faker.allow(whereis!(server))
 
   @spec expect(mock) :: :ok
   def expect(fun), do: Faker.expect(fun)
@@ -301,6 +303,13 @@ defmodule OsCmd do
   end
 
   defp handle_event(_event, state), do: state
+
+  defp whereis!(server) do
+    case GenServer.whereis(server) do
+      pid when is_pid(pid) -> pid
+      nil -> raise "process #{inspect(server)} not found"
+    end
+  end
 
   defmodule Program do
     @moduledoc false

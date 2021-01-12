@@ -39,8 +39,10 @@ defmodule Job do
          do: await(pid)
   end
 
-  @spec await(pid) :: response | {:exit, reason :: any}
-  def await(pid) do
+  @spec await(GenServer.server()) :: response | {:exit, reason :: any}
+  def await(server) do
+    pid = whereis!(server)
+
     receive do
       {__MODULE__, :response, ^pid, response} -> response
     end
@@ -58,9 +60,6 @@ defmodule Job do
     with {:ok, pid} <- start_action(action, opts),
          do: await(pid)
   end
-
-  @spec respond(pid, response) :: :ok
-  def respond(pid, response), do: respond(pid, response, [])
 
   @impl GenServer
   def init({action, opts}) do
@@ -126,5 +125,12 @@ defmodule Job do
     |> Keyword.merge(overrides)
     |> Keyword.merge(extra_overrides)
     |> Keyword.merge(meta: %{respond_to: respond_to}, restart: :temporary, ephemeral?: true)
+  end
+
+  defp whereis!(server) do
+    case GenServer.whereis(server) do
+      pid when is_pid(pid) -> pid
+      nil -> raise "process #{inspect(server)} not found"
+    end
   end
 end
