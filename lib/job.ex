@@ -14,15 +14,6 @@ defmodule Job do
   @spec start_link(action, start_opts) :: GenServer.on_start()
   def start_link(action, opts \\ []) do
     {gen_server_opts, opts} = Keyword.split(opts, ~w/name/a)
-
-    opts =
-      opts
-      |> Keyword.pop(:respond?, false)
-      |> case do
-        {false, _opts} -> opts
-        {true, opts} -> Keyword.merge(opts, respond_to: self())
-      end
-
     Parent.GenServer.start_link(__MODULE__, {action, opts}, gen_server_opts)
   end
 
@@ -34,7 +25,7 @@ defmodule Job do
 
   @spec run(action, start_opts) :: response | {:exit, reason :: any}
   def run(action, opts \\ []) do
-    with {:ok, pid} <- start_link(action, Keyword.merge(opts, respond?: true)),
+    with {:ok, pid} <- start_link(action, Keyword.merge(opts, respond_to: self())),
          do: await(pid)
   end
 

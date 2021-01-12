@@ -12,7 +12,7 @@ defmodule Job.PipelineTest do
             new_action(1, fn -> {:ok, 1} end),
             new_action(2, fn -> {:ok, 2} end)
           ]),
-          respond?: true
+          respond_to: self()
         )
 
       assert_receive {:action_started, 1, action1}
@@ -34,7 +34,7 @@ defmodule Job.PipelineTest do
             new_action(2, fn -> {:error, 2} end),
             new_action(3, fn -> {:ok, 3} end)
           ]),
-          respond?: true
+          respond_to: self()
         )
 
       assert_receive {:action_started, 1, action1}
@@ -65,7 +65,7 @@ defmodule Job.PipelineTest do
             new_action(1, fn -> {:ok, 1} end),
             new_action(2, fn -> {:ok, 2} end)
           ]),
-          respond?: true
+          respond_to: self()
         )
 
       assert_receive {:action_started, 1, action1}

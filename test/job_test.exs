@@ -15,7 +15,7 @@ defmodule JobTest do
     end
 
     test "can be awaited on" do
-      {:ok, job} = Job.start_link(fn -> :foo end, respond?: true)
+      {:ok, job} = Job.start_link(fn -> :foo end, respond_to: self())
       assert Job.await(job) == :foo
     end
 
@@ -41,7 +41,7 @@ defmodule JobTest do
     @tag capture_log: true
     test "always stops with reason `normal` if response is being sent back" do
       Process.flag(:trap_exit, true)
-      assert {:ok, job} = Job.start_link(fn -> exit(:foo) end, respond?: true)
+      assert {:ok, job} = Job.start_link(fn -> exit(:foo) end, respond_to: self())
       refute_receive {:EXIT, ^job, :foo}
     end
 
