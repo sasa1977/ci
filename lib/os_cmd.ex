@@ -8,14 +8,16 @@ defmodule OsCmd do
 
   @type start_opts :: [
           name: GenServer.name(),
-          handler: (event -> any),
-          notify: pid(),
+          handler: handler,
           timeout: pos_integer() | :infinity,
           cd: String.t(),
           env: [{String.t() | atom, String.t() | nil}],
           use_pty: boolean,
           terminate_cmd: String.t()
         ]
+
+  @type handler :: (event -> any) | {acc, (event, acc -> acc)}
+  @type acc :: any
 
   @type event ::
           :starting
@@ -82,7 +84,8 @@ defmodule OsCmd do
 
   @spec run(String.t(), start_opts()) :: {:ok, output} | {:error, exit_status | term(), output}
   def run(cmd, opts \\ []) do
-    start_arg = {cmd, [notify: self()] ++ opts}
+    caller = self()
+    start_arg = {cmd, [handler: &send(caller, {self(), &1})] ++ opts}
 
     start_fun =
       case Keyword.fetch(opts, :start) do
@@ -134,7 +137,14 @@ defmodule OsCmd do
   def init({cmd, opts}) do
     Process.flag(:trap_exit, true)
 
-    Keyword.fetch!(opts, :handler).(:starting)
+    state = %{
+      port: nil,
+      handlers: Keyword.fetch!(opts, :handlers),
+      propagate_exit?: Keyword.get(opts, :propagate_exit?, false),
+      buffer: ""
+    }
+
+    state = invoke_handler(state, :starting)
 
     with {:ok, timeout} <- Keyword.fetch(opts, :timeout),
          do: Process.send_after(self(), :timeout, timeout)
@@ -150,17 +160,8 @@ defmodule OsCmd do
       end
 
     case starter.start(cmd, opts) do
-      {:ok, port} ->
-        {:ok,
-         %{
-           port: port,
-           handler: Keyword.fetch!(opts, :handler),
-           propagate_exit?: Keyword.get(opts, :propagate_exit?, false),
-           buffer: ""
-         }}
-
-      {:error, reason} ->
-        {:stop, reason}
+      {:ok, port} -> {:ok, %{state | port: port}}
+      {:error, reason} -> {:stop, reason}
     end
   end
 
@@ -192,13 +193,7 @@ defmodule OsCmd do
   def terminate(_reason, state), do: stop_program(state)
 
   defp normalize_opts(opts) do
-    all_handlers = Keyword.get_values(opts, :handler)
-    all_subscribers = Keyword.get_values(opts, :notify)
-
-    handler = fn message ->
-      Enum.each(all_handlers, & &1.(message))
-      Enum.each(all_subscribers, &send(&1, {self(), message}))
-    end
+    {handlers, opts} = Keyword.pop_values(opts, :handler)
 
     env =
       opts
@@ -208,7 +203,7 @@ defmodule OsCmd do
         {name, value} -> {env_name_to_charlist(name), to_charlist(value)}
       end)
 
-    Keyword.merge(opts, handler: handler, env: env)
+    Keyword.merge(opts, handlers: handlers, env: env)
   end
 
   defp env_name_to_charlist(atom) when is_atom(atom),
@@ -219,13 +214,24 @@ defmodule OsCmd do
   defp stop_server(%{propagate_exit?: false} = state, _exit_reason), do: {:stop, :normal, state}
   defp stop_server(state, reason), do: {:stop, reason, state}
 
-  defp invoke_handler(%{handler: nil} = state, _message), do: state
-
-  defp invoke_handler(%{handler: handler} = state, message) do
+  defp invoke_handler(state, message) do
     message = with message when is_binary(message) <- message, do: :erlang.binary_to_term(message)
     {message, state} = normalize_message(message, state)
-    handler.(message)
-    state
+
+    handlers =
+      Enum.map(
+        state.handlers,
+        fn
+          {acc, fun} ->
+            {fun.(message, acc), fun}
+
+          fun ->
+            fun.(message)
+            fun
+        end
+      )
+
+    %{state | handlers: handlers}
   end
 
   defp normalize_message({:output, output}, state) do
@@ -245,39 +251,45 @@ defmodule OsCmd do
   defp stop_program(%{port: port} = state) do
     Port.command(port, "stop")
 
-    Stream.repeatedly(fn ->
-      receive do
-        {^port, {:data, message}} -> invoke_handler(state, message)
-        {^port, {:exit_status, _exit_status}} -> nil
+    Stream.iterate(
+      state,
+      fn state ->
+        receive do
+          {^port, {:data, message}} -> invoke_handler(state, message)
+          {^port, {:exit_status, _exit_status}} -> nil
+        end
       end
-    end)
+    )
     |> Enum.find(&is_nil/1)
   end
 
   @doc false
-  def job_action_spec(responder, {cmd, opts}),
-    do: {__MODULE__, {cmd, [handler: &handle_event(&1, cmd, responder)] ++ opts}}
+  def job_action_spec(responder, {cmd, opts}) do
+    handler_state = %{responder: responder, cmd: cmd, opts: opts, output: []}
+    {__MODULE__, {cmd, [handler: {handler_state, &handle_event/2}] ++ opts}}
+  end
 
   def job_action_spec(responder, cmd), do: job_action_spec(responder, {cmd, []})
 
-  defp handle_event({:output, output}, _cmd, _responder),
-    do: Process.put({__MODULE__, :output}, [Process.get({__MODULE__, :output}, []), output])
+  defp handle_event({:output, output}, state),
+    do: update_in(state.output, &[&1, output])
 
-  defp handle_event({:stopped, exit_status}, cmd, responder) do
-    output = to_string(Process.get({__MODULE__, :output}, []))
+  defp handle_event({:stopped, exit_status}, state) do
+    output = to_string(state.output)
 
     response =
       if exit_status == 0 do
         {:ok, output}
       else
-        message = "#{cmd} exited with status #{exit_status}:\n\n#{output}"
+        message = "#{state.cmd} exited with status #{exit_status}:\n\n#{output}"
         {:error, %OsCmd.Error{exit_status: exit_status, message: message}}
       end
 
-    responder.(response)
+    state.responder.(response)
+    nil
   end
 
-  defp handle_event(_event, _cmd, _caller), do: :ok
+  defp handle_event(_event, state), do: state
 
   defmodule Program do
     @moduledoc false

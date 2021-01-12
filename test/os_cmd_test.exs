@@ -186,23 +186,29 @@ defmodule OsCmdTest do
         assert_receive {:EXIT, ^pid, :timeout}
       end
 
-      test "notifies all processes and invokes the custom handler" do
-        Process.flag(:trap_exit, true)
+      test "invokes the custom zero arity handler" do
+        test_pid = self()
+        start_cmd!("echo 1", handler: &send(test_pid, &1))
 
-        output =
-          ExUnit.CaptureIO.capture_io(fn ->
-            pid = start_cmd!("echo 1", notify: self(), notify: self(), handler: &IO.inspect/1)
-            assert_receive {^pid, {:output, "1\n"}}
-            assert_receive {^pid, {:output, "1\n"}}
+        assert_receive :starting
+        assert_receive {:output, "1\n"}
+        assert_receive {:stopped, 0}
+      end
 
-            assert_receive {^pid, {:stopped, 0}}
-            assert_receive {^pid, {:stopped, 0}}
+      test "supports accumulating handler" do
+        test_pid = self()
 
-            # prevents a crash in the cmd process due to race condition with captureio
-            assert_receive {:EXIT, ^pid, _}
-          end)
+        handler = {
+          [],
+          fn
+            {:stopped, _}, messages -> send(test_pid, messages)
+            message, messages -> [message | messages]
+          end
+        }
 
-        assert output =~ ~s/{:output, "1\\n"/
+        OsCmd.run("echo 1", handler: handler)
+
+        assert_receive [{:output, "1\n"}, :starting]
       end
     end
 
@@ -350,7 +356,14 @@ defmodule OsCmdTest do
   end
 
   defp start_cmd(command, opts \\ []) do
-    opts = Keyword.merge([notify: self()], opts)
+    opts =
+      [notify: self()]
+      |> Keyword.merge(opts)
+      |> Enum.map(fn opt ->
+        with {:notify, pid} <- opt,
+             do: {:handler, &send(pid, {self(), &1})}
+      end)
+
     OsCmd.start_link({command, opts})
   end
 
