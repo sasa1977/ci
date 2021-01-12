@@ -1,6 +1,18 @@
 defmodule Job do
   use Parent.GenServer
 
+  @type action ::
+          (() -> response)
+          | {module :: atom, function :: atom, args :: [any]}
+          | (responder -> Parent.start_spec())
+          | {module :: atom, arg :: any}
+
+  @type response :: any
+  @type responder :: (response -> :ok)
+
+  @type start_opts :: [respond_to: pid, timeout: timeout, name: GenServer.name()]
+
+  @spec start_link(action, start_opts) :: GenServer.on_start()
   def start_link(action, opts \\ []) do
     {gen_server_opts, opts} = Keyword.split(opts, ~w/name/a)
 
@@ -15,34 +27,39 @@ defmodule Job do
     Parent.GenServer.start_link(__MODULE__, {action, opts}, gen_server_opts)
   end
 
-  @doc false
+  @spec child_spec({action, start_opts} | action) :: Parent.child_spec()
   def child_spec({action, opts}),
     do: Parent.parent_spec(id: __MODULE__, start: {__MODULE__, :start_link, [action, opts]})
 
   def child_spec(action), do: child_spec({action, []})
 
+  @spec run(action, start_opts) :: response | {:exit, reason :: any}
   def run(action, opts \\ []) do
     with {:ok, pid} <- start_link(action, Keyword.merge(opts, respond?: true)),
          do: await(pid)
   end
 
+  @spec await(pid) :: response | {:exit, reason :: any}
   def await(pid) do
     receive do
       {__MODULE__, :response, ^pid, response} -> response
     end
   end
 
+  @spec start_action(action, timeout: timeout) :: Parent.on_start_child()
   def start_action(action, opts \\ []) do
     action_spec = action_spec(action, responder(self()))
     child_overrides = child_overrides(opts, self(), id: nil, binds_to: [self()])
     Parent.Client.start_child(parent(), action_spec, child_overrides)
   end
 
+  @spec run_action(action, timeout: timeout) :: response | {:exit, reason :: any}
   def run_action(action, opts \\ []) do
     with {:ok, pid} <- start_action(action, opts),
          do: await(pid)
   end
 
+  @spec respond(pid, response) :: :ok
   def respond(pid, response), do: respond(pid, response, [])
 
   @impl GenServer
@@ -76,7 +93,9 @@ defmodule Job do
 
   defp action_spec(fun, responder) when is_function(fun, 0), do: task_spec(fun, responder)
   defp action_spec({_module, _fun, _args} = mfa, responder), do: task_spec(mfa, responder)
-  defp action_spec(fun, responder) when is_function(fun, 1), do: fun.(responder)
+
+  defp action_spec(fun, responder) when is_function(fun, 1),
+    do: Supervisor.child_spec(fun.(responder), [])
 
   defp action_spec({module, arg}, responder),
     do: Supervisor.child_spec(module.job_action_spec(responder, arg), [])
