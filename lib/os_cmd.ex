@@ -3,7 +3,7 @@ defmodule OsCmd do
   alias OsCmd.Faker
 
   defmodule Error do
-    defexception [:message, :exit_status]
+    defexception [:message, :exit_status, :output]
   end
 
   @type start_opts :: [
@@ -294,8 +294,8 @@ defmodule OsCmd do
       if exit_status == 0 do
         {:ok, output}
       else
-        message = "#{state.cmd} exited with status #{exit_status}:\n\n#{output}"
-        {:error, %OsCmd.Error{exit_status: exit_status, message: message}}
+        message = "#{state.cmd} exited with status #{exit_status}"
+        {:error, %OsCmd.Error{exit_status: exit_status, message: message, output: output}}
       end
 
     state.responder.(response)

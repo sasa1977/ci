@@ -347,7 +347,6 @@ defmodule OsCmdTest do
       OsCmd.stub(fn _command, _opts -> {:ok, 1, "some error"} end)
       assert {:error, %OsCmd.Error{} = error} = Job.run(fn -> Job.run_action({OsCmd, "foo"}) end)
       assert error.message =~ "foo exited with status 1"
-      assert error.message =~ "some error"
     end
   end
 

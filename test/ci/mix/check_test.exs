@@ -15,7 +15,7 @@ defmodule Mix.Tasks.Ci.CheckTest do
   test "reports error" do
     assert_raise(
       Mix.Error,
-      ~r/mix test exited with status 1.*mix test output/s,
+      ~r/mix test exited with status 1/s,
       fn ->
         run_checks(
           cmd_stub: fn
