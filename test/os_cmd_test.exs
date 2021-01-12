@@ -210,6 +210,18 @@ defmodule OsCmdTest do
 
         assert_receive [{:output, "1\n"}, :starting]
       end
+
+      @tag capture_log: true
+      test "crashes on handler crash" do
+        Process.flag(:trap_exit, true)
+
+        assert {:error, {%RuntimeError{message: "foo"}, _stacktrace}, "1\n"} =
+                 OsCmd.run(~s/bash -c "echo 1; sleep 999999999"/,
+                   handler: &with({:output, _} <- &1, do: raise("foo"))
+                 )
+
+        assert_receive {:EXIT, _pid, {%RuntimeError{message: "foo"}, _stacktrace}}
+      end
     end
 
     describe "events stream" do
@@ -232,11 +244,12 @@ defmodule OsCmdTest do
           pid
           |> OsCmd.events()
           |> Enum.map(fn event ->
-            with {:output, _} <- event, do: Process.exit(pid, :kill)
+            with {:output, _} <- event, do: Process.exit(pid, :shutdown)
+            event
           end)
           |> Enum.at(-1)
 
-        assert last_event == {:terminated, :killed}
+        assert last_event == {:stopped, :shutdown}
       end
     end
 
@@ -247,23 +260,6 @@ defmodule OsCmdTest do
 
       test "returns error if the program fails" do
         assert OsCmd.run(~s/bash -c "echo 1; exit 2"/) == {:error, 2, "1\n"}
-      end
-
-      test "returns error if the owner terminates" do
-        Process.flag(:trap_exit, true)
-
-        task =
-          Task.async(fn ->
-            Process.flag(:trap_exit, true)
-            OsCmd.run("sleep 999999999")
-          end)
-
-        Process.sleep(100)
-        {:links, links} = Process.info(task.pid, :links)
-        [cmd_pid] = links -- [self()]
-        Process.exit(cmd_pid, :kill)
-
-        assert Task.await(task) == {:error, :killed, ""}
       end
     end
   end
