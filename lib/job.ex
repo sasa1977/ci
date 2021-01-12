@@ -3,13 +3,13 @@ defmodule Job do
 
   @type action ::
           (() -> response)
-          | (responder -> Parent.start_spec())
+          | (responder -> {Parent.start_spec(), action_opts})
           | {module :: atom, function :: atom, args :: [any]}
 
   @type response :: any
   @type responder :: (response -> :ok)
-
   @type start_opts :: [respond_to: pid, timeout: timeout, name: GenServer.name()]
+  @type action_opts :: [timeout: timeout]
 
   @spec start_link(action, start_opts) :: GenServer.on_start()
   def start_link(action, opts \\ []) do
@@ -47,14 +47,15 @@ defmodule Job do
     end
   end
 
-  @spec start_action(action, timeout: timeout) :: Parent.on_start_child()
+  @spec start_action(action, action_opts) :: Parent.on_start_child()
   def start_action(action, opts \\ []) do
-    action_spec = action_spec(action, responder(self()))
+    {action_spec, action_opts} = action_spec(action, responder(self()))
+    opts = Keyword.merge(action_opts, opts)
     child_overrides = child_overrides(opts, self(), id: nil, binds_to: [self()])
     Parent.Client.start_child(parent(), action_spec, child_overrides)
   end
 
-  @spec run_action(action, timeout: timeout) :: response | {:exit, reason :: any}
+  @spec run_action(action, action_opts) :: response | {:exit, reason :: any}
   def run_action(action, opts \\ []) do
     with {:ok, pid} <- start_action(action, opts),
          do: await(pid)
@@ -63,7 +64,8 @@ defmodule Job do
   @impl GenServer
   def init({action, opts}) do
     {respond_to, opts} = Keyword.pop(opts, :respond_to)
-    action_spec = action_spec(action, responder(respond_to, from: self()))
+    {action_spec, action_opts} = action_spec(action, responder(respond_to, from: self()))
+    opts = Keyword.merge(action_opts, opts)
     child_overrides = child_overrides(opts, respond_to, id: :main)
 
     case Parent.start_child(action_spec, child_overrides) do
@@ -89,11 +91,13 @@ defmodule Job do
     {:noreply, state}
   end
 
-  defp action_spec(fun, responder) when is_function(fun, 0), do: task_spec(fun, responder)
-  defp action_spec({_module, _fun, _args} = mfa, responder), do: task_spec(mfa, responder)
+  defp action_spec(fun, responder) when is_function(fun, 0), do: {task_spec(fun, responder), []}
+  defp action_spec({_module, _fun, _args} = mfa, responder), do: {task_spec(mfa, responder), []}
 
-  defp action_spec(fun, responder) when is_function(fun, 1),
-    do: Supervisor.child_spec(fun.(responder), [])
+  defp action_spec(fun, responder) when is_function(fun, 1) do
+    {action_spec, action_opts} = fun.(responder)
+    {Supervisor.child_spec(action_spec, []), action_opts}
+  end
 
   defp task_spec(invocable, responder), do: {Task, fn -> responder.(invoke(invocable)) end}
 

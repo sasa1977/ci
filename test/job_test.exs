@@ -28,7 +28,7 @@ defmodule JobTest do
     end
 
     test "accepts childspec factory function" do
-      assert Job.run(&{Task, fn -> &1.(:foo) end}) == :foo
+      assert Job.run(&{{Task, fn -> &1.(:foo) end}, []}) == :foo
     end
 
     @tag capture_log: true

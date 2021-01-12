@@ -128,7 +128,7 @@ defmodule OsCmd do
   def action(cmd, opts \\ []) do
     fn responder ->
       handler_state = %{responder: responder, cmd: cmd, opts: opts, output: []}
-      {__MODULE__, {cmd, [handler: {handler_state, &handle_event/2}] ++ opts}}
+      {{__MODULE__, {cmd, [handler: {handler_state, &handle_event/2}] ++ opts}}, []}
     end
   end
 
