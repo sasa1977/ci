@@ -3,9 +3,8 @@ defmodule Job do
 
   @type action ::
           (() -> response)
-          | {module :: atom, function :: atom, args :: [any]}
           | (responder -> Parent.start_spec())
-          | {module :: atom, arg :: any}
+          | {module :: atom, function :: atom, args :: [any]}
 
   @type response :: any
   @type responder :: (response -> :ok)
@@ -95,9 +94,6 @@ defmodule Job do
 
   defp action_spec(fun, responder) when is_function(fun, 1),
     do: Supervisor.child_spec(fun.(responder), [])
-
-  defp action_spec({module, arg}, responder),
-    do: Supervisor.child_spec(module.job_action_spec(responder, arg), [])
 
   defp task_spec(invocable, responder), do: {Task, fn -> responder.(invoke(invocable)) end}
 

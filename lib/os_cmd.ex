@@ -124,6 +124,14 @@ defmodule OsCmd do
     end
   end
 
+  @spec action(String.t(), start_opts) :: Job.action()
+  def action(cmd, opts \\ []) do
+    fn responder ->
+      handler_state = %{responder: responder, cmd: cmd, opts: opts, output: []}
+      {__MODULE__, {cmd, [handler: {handler_state, &handle_event/2}] ++ opts}}
+    end
+  end
+
   @spec allow(GenServer.server()) :: :ok
   def allow(server), do: Faker.allow(whereis!(server))
 
@@ -275,14 +283,6 @@ defmodule OsCmd do
       end
     end
   end
-
-  @doc false
-  def job_action_spec(responder, {cmd, opts}) do
-    handler_state = %{responder: responder, cmd: cmd, opts: opts, output: []}
-    {__MODULE__, {cmd, [handler: {handler_state, &handle_event/2}] ++ opts}}
-  end
-
-  def job_action_spec(responder, cmd), do: job_action_spec(responder, {cmd, []})
 
   defp handle_event({:output, output}, state),
     do: update_in(state.output, &[&1, output])

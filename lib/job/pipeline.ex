@@ -1,12 +1,11 @@
 defmodule Job.Pipeline do
-  @type pipeline :: {:sequence | :parallel, [Job.action() | pipeline]}
+  @spec sequence([Job.action()]) :: Job.action()
+  def sequence(actions), do: &{Task, fn -> &1.(run_sequence(actions)) end}
 
-  @doc false
-  def job_action_spec(responder, pipeline),
-    do: {Task, fn -> responder.(run(pipeline)) end}
+  @spec parallel([Job.action()]) :: Job.action()
+  def parallel(actions), do: &{Task, fn -> &1.(run_parallel(actions)) end}
 
-  @spec run(pipeline) :: {:ok, [result :: any]} | {:error, [error :: any]}
-  def run({:sequence, actions}) do
+  defp run_sequence(actions) do
     result =
       Enum.reduce_while(
         actions,
@@ -26,7 +25,7 @@ defmodule Job.Pipeline do
     with results when is_list(results) <- result, do: {:ok, Enum.reverse(results)}
   end
 
-  def run({:parallel, actions}) do
+  defp run_parallel(actions) do
     actions
     |> Enum.map(&start_action/1)
     |> Enum.map(&with {:ok, pid} <- &1, do: await_pipeline_action(pid))
@@ -37,8 +36,6 @@ defmodule Job.Pipeline do
     end
   end
 
-  defp start_action({:sequence, _} = sequence), do: start_action({__MODULE__, sequence})
-  defp start_action({:parallel, _} = parallel), do: start_action({__MODULE__, parallel})
   defp start_action(action), do: Job.start_action(action, timeout: :infinity)
 
   defp await_pipeline_action(pid) do

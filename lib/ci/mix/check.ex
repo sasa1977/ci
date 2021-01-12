@@ -8,12 +8,10 @@ defmodule Mix.Tasks.Ci.Check do
     {:ok, _} = Application.ensure_all_started(:ci)
 
     Job.run(
-      {Pipeline,
-       {:sequence,
-        [
-          mix("compile --warnings-as-errors"),
-          {:parallel, [mix("dialyzer"), mix("test"), mix("format --check-formatted")]}
-        ]}},
+      Pipeline.sequence([
+        mix("compile --warnings-as-errors"),
+        Pipeline.parallel([mix("dialyzer"), mix("test"), mix("format --check-formatted")])
+      ]),
       timeout: :timer.minutes(10)
     )
     |> report_errors()
@@ -39,7 +37,7 @@ defmodule Mix.Tasks.Ci.Check do
   defp cmd(cmd, opts) do
     handler = &log(message(&1, cmd))
     cmd_opts = [handler: handler] ++ Keyword.merge([pty: true], opts)
-    {OsCmd, {cmd, cmd_opts}}
+    OsCmd.action(cmd, cmd_opts)
   end
 
   defp log(message), do: IO.write(message)
