@@ -1,8 +1,8 @@
 defmodule Job.Pipeline do
-  @spec sequence([Job.action()]) :: Job.action()
+  @spec sequence([Job.action()], [Job.action_opt()]) :: Job.action()
   def sequence(actions, opts \\ []), do: &{{Task, fn -> &1.(run_sequence(actions)) end}, opts}
 
-  @spec parallel([Job.action()]) :: Job.action()
+  @spec parallel([Job.action()], [Job.action_opt()]) :: Job.action()
   def parallel(actions, opts \\ []), do: &{{Task, fn -> &1.(run_parallel(actions)) end}, opts}
 
   defp run_sequence(actions) do

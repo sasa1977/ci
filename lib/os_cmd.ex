@@ -6,17 +6,16 @@ defmodule OsCmd do
     defexception [:message, :exit_status, :output]
   end
 
-  @type start_opts :: [
-          name: GenServer.name(),
-          handler: handler,
-          timeout: pos_integer() | :infinity,
-          cd: String.t(),
-          env: [{String.t() | atom, String.t() | nil}],
-          use_pty: boolean,
-          terminate_cmd: String.t(),
-          telemetry_id: any,
-          telemetry_meta: any
-        ]
+  @type start_opt ::
+          {:name, GenServer.name()}
+          | {:handler, handler}
+          | {:timeout, pos_integer() | :infinity}
+          | {:cd, String.t()}
+          | {:env, [{String.t() | atom, String.t() | nil}]}
+          | {:use_pty, boolean}
+          | {:terminate_cmd, String.t()}
+          | {:telemetry_id, any}
+          | {:telemetry_meta, any}
 
   @type handler :: (event -> any) | {acc, (event, acc -> acc)}
   @type acc :: any
@@ -28,7 +27,7 @@ defmodule OsCmd do
 
   @type mock ::
           String.t()
-          | (command :: String.t(), start_opts -> {:ok, output} | {:error, exit_status, output})
+          | (command :: String.t(), [start_opt] -> {:ok, output} | {:error, exit_status, output})
 
   @type output :: String.t()
   @type exit_status :: non_neg_integer() | (exit_reason :: :timeout | any)
@@ -36,7 +35,7 @@ defmodule OsCmd do
   @spec start_link(String.t()) :: GenServer.on_start()
   def start_link(command) when is_binary(command), do: start_link({command, []})
 
-  @spec start_link({String.t(), start_opts}) :: GenServer.on_start()
+  @spec start_link({String.t(), [start_opt]}) :: GenServer.on_start()
   def start_link({command, opts}) do
     opts = normalize_opts(opts)
     GenServer.start_link(__MODULE__, {command, opts}, Keyword.take(opts, [:name]))
@@ -85,7 +84,7 @@ defmodule OsCmd do
     )
   end
 
-  @spec run(String.t(), start_opts()) :: {:ok, output} | {:error, exit_status | term(), output}
+  @spec run(String.t(), [start_opt]) :: {:ok, output} | {:error, exit_status | term(), output}
   def run(cmd, opts \\ []) do
     caller = self()
     start_arg = {cmd, [handler: &send(caller, {self(), &1})] ++ opts}
@@ -126,17 +125,12 @@ defmodule OsCmd do
     end
   end
 
-  @spec action(String.t(), start_opts) :: Job.action()
+  @spec action(String.t(), [start_opt | Job.action_opt()]) :: Job.action()
   def action(cmd, opts \\ []) do
     fn responder ->
+      {action_opts, opts} = Keyword.split(opts, ~w/telemetry_id temeletry_meta/a)
+      action_opts = Config.Reader.merge(action_opts, telemetry_meta: %{cmd: cmd})
       handler_state = %{responder: responder, cmd: cmd, opts: opts, output: []}
-
-      action_opts =
-        Keyword.merge(
-          [telemetry_meta: %{cmd: cmd}],
-          Keyword.take(opts, ~w/telemetry_id/a)
-        )
-
       {{__MODULE__, {cmd, [handler: {handler_state, &handle_event/2}] ++ opts}}, action_opts}
     end
   end

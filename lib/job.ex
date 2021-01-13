@@ -2,34 +2,30 @@ defmodule Job do
   use Parent.GenServer
 
   @type action ::
-          (() -> response)
-          | (responder -> {Parent.start_spec(), action_opts})
-          | {module :: atom, function :: atom, args :: [any]}
+          action_fun_or_mfa
+          | {action_fun_or_mfa, [action_opt]}
+          | (responder -> {Parent.start_spec(), [action_opt]})
+
+  @type action_fun_or_mfa :: (() -> response) | {module :: atom, function :: atom, args :: [any]}
 
   @type response :: any
   @type responder :: (response -> :ok)
-  @type start_opts :: [
-          respond_to: pid,
-          timeout: timeout,
-          name: GenServer.name(),
-          telemetry_id: any,
-          telemetry_meta: any
-        ]
-  @type action_opts :: [timeout: timeout, telemetry_id: any, telemetry_meta: any]
+  @type start_opt :: {:respond_to, pid} | {:name, GenServer.name()} | action_opt
+  @type action_opt :: {:timeout, timeout} | {:telemetry_id, any} | {:telemetry_meta, any}
 
-  @spec start_link(action, start_opts) :: GenServer.on_start()
+  @spec start_link(action, [start_opt]) :: GenServer.on_start()
   def start_link(action, opts \\ []) do
     {gen_server_opts, opts} = Keyword.split(opts, ~w/name/a)
     Parent.GenServer.start_link(__MODULE__, {action, opts}, gen_server_opts)
   end
 
-  @spec child_spec({action, start_opts} | action) :: Parent.child_spec()
+  @spec child_spec({action, [start_opt]} | action) :: Parent.child_spec()
   def child_spec({action, opts}),
     do: Parent.parent_spec(id: __MODULE__, start: {__MODULE__, :start_link, [action, opts]})
 
   def child_spec(action), do: child_spec({action, []})
 
-  @spec run(action, start_opts) :: response | {:exit, reason :: any}
+  @spec run(action, [start_opt]) :: response | {:exit, reason :: any}
   def run(action, opts \\ []) do
     with {:ok, pid} <- start_link(action, Keyword.merge(opts, respond_to: self())),
          do: await(pid)
@@ -50,7 +46,7 @@ defmodule Job do
     end
   end
 
-  @spec start_action(action, action_opts) :: Parent.on_start_child()
+  @spec start_action(action, [action_opt]) :: Parent.on_start_child()
   def start_action(action, opts \\ []) do
     {action_spec, action_opts} = action_spec(action, responder(self()))
     opts = Keyword.merge(action_opts, opts)
@@ -58,7 +54,7 @@ defmodule Job do
     Parent.Client.start_child(parent(), action_spec, child_overrides)
   end
 
-  @spec run_action(action, action_opts) :: response | {:exit, reason :: any}
+  @spec run_action(action, [action_opt]) :: response | {:exit, reason :: any}
   def run_action(action, opts \\ []) do
     with {:ok, pid} <- start_action(action, opts),
          do: await(pid)
@@ -94,13 +90,15 @@ defmodule Job do
     {:noreply, state}
   end
 
-  defp action_spec(fun, responder) when is_function(fun, 0), do: {task_spec(fun, responder), []}
-  defp action_spec({_module, _fun, _args} = mfa, responder), do: {task_spec(mfa, responder), []}
-
   defp action_spec(fun, responder) when is_function(fun, 1) do
     {action_spec, action_opts} = fun.(responder)
     {Supervisor.child_spec(action_spec, []), action_opts}
   end
+
+  defp action_spec({fun_or_mfa, action_opts}, responder),
+    do: {task_spec(fun_or_mfa, responder), action_opts}
+
+  defp action_spec(fun_or_mfa, responder), do: action_spec({fun_or_mfa, []}, responder)
 
   defp task_spec(invocable, responder), do: {Task, fn -> responder.(invoke(invocable)) end}
 
