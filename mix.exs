@@ -17,7 +17,7 @@ defmodule Ci.MixProject do
   def application do
     [
       mod: {Ci.App, []},
-      extra_applications: [:logger]
+      extra_applications: [:eex, :logger]
     ]
   end
 
