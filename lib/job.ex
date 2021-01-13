@@ -8,8 +8,14 @@ defmodule Job do
 
   @type response :: any
   @type responder :: (response -> :ok)
-  @type start_opts :: [respond_to: pid, timeout: timeout, name: GenServer.name()]
-  @type action_opts :: [timeout: timeout]
+  @type start_opts :: [
+          respond_to: pid,
+          timeout: timeout,
+          name: GenServer.name(),
+          telemetry_id: any,
+          telemetry_meta: any
+        ]
+  @type action_opts :: [timeout: timeout, telemetry_id: any, telemetry_meta: any]
 
   @spec start_link(action, start_opts) :: GenServer.on_start()
   def start_link(action, opts \\ []) do
@@ -32,9 +38,15 @@ defmodule Job do
   @spec await(GenServer.server()) :: response | {:exit, reason :: any}
   def await(server) do
     pid = whereis!(server)
+    mref = Process.monitor(pid)
+
+    response =
+      receive do
+        {__MODULE__, :response, ^pid, response} -> response
+      end
 
     receive do
-      {__MODULE__, :response, ^pid, response} -> response
+      {:DOWN, ^mref, :process, ^pid, _} -> response
     end
   end
 
@@ -95,8 +107,19 @@ defmodule Job do
   defp invoke(fun) when is_function(fun, 0), do: fun.()
   defp invoke({module, function, args}), do: apply(module, function, args)
 
-  defp send_exit_response(from, reason, meta),
-    do: if(reason != :normal, do: respond(meta.respond_to, {:exit, reason}, from: from))
+  defp send_exit_response(from, reason, meta) do
+    unless is_nil(meta.telemetry_id) do
+      duration = System.monotonic_time() - meta.start
+
+      :telemetry.execute(
+        meta.telemetry_id ++ [:stop],
+        %{duration: duration},
+        meta.telemetry_meta
+      )
+    end
+
+    if(reason != :normal, do: respond(meta.respond_to, {:exit, reason}, from: from))
+  end
 
   defp parent, do: hd(Process.get(:"$ancestors"))
 
@@ -112,10 +135,24 @@ defmodule Job do
   end
 
   defp child_overrides(overrides, respond_to, extra_overrides) do
+    start = System.monotonic_time()
+    telemetry_id = Keyword.get(overrides, :telemetry_id)
+    telemetry_meta = Keyword.get(overrides, :telemetry_meta, %{})
+
+    unless is_nil(telemetry_id),
+      do: :telemetry.execute(telemetry_id ++ [:start], %{time: start}, telemetry_meta)
+
+    meta = %{
+      respond_to: respond_to,
+      start: start,
+      telemetry_id: telemetry_id,
+      telemetry_meta: telemetry_meta
+    }
+
     [timeout: :timer.seconds(5)]
     |> Keyword.merge(overrides)
     |> Keyword.merge(extra_overrides)
-    |> Keyword.merge(meta: %{respond_to: respond_to}, restart: :temporary, ephemeral?: true)
+    |> Keyword.merge(meta: meta, restart: :temporary, ephemeral?: true)
   end
 
   defp whereis!(server) do

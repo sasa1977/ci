@@ -13,7 +13,9 @@ defmodule OsCmd do
           cd: String.t(),
           env: [{String.t() | atom, String.t() | nil}],
           use_pty: boolean,
-          terminate_cmd: String.t()
+          terminate_cmd: String.t(),
+          telemetry_id: any,
+          telemetry_meta: any
         ]
 
   @type handler :: (event -> any) | {acc, (event, acc -> acc)}
@@ -128,7 +130,14 @@ defmodule OsCmd do
   def action(cmd, opts \\ []) do
     fn responder ->
       handler_state = %{responder: responder, cmd: cmd, opts: opts, output: []}
-      {{__MODULE__, {cmd, [handler: {handler_state, &handle_event/2}] ++ opts}}, []}
+
+      action_opts =
+        Keyword.merge(
+          [telemetry_meta: %{cmd: cmd}],
+          Keyword.take(opts, ~w/telemetry_id/a)
+        )
+
+      {{__MODULE__, {cmd, [handler: {handler_state, &handle_event/2}] ++ opts}}, action_opts}
     end
   end
 

@@ -26,7 +26,8 @@ defmodule Ci.MixProject do
       {:dialyxir, "~> 1.0", only: :test, runtime: false},
       {:mox, "~> 1.0"},
       {:nimble_parsec, "~> 1.1"},
-      {:parent, github: "sasa1977/parent"}
+      {:parent, github: "sasa1977/parent"},
+      {:telemetry, "~> 0.4"}
     ]
   end
 
