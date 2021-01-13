@@ -24,6 +24,7 @@ defmodule Ci.MixProject do
   defp deps do
     [
       {:dialyxir, "~> 1.0", only: :test, runtime: false},
+      {:ex_doc, "~> 0.23", only: :dev},
       {:mox, "~> 1.0"},
       {:nimble_parsec, "~> 1.1"},
       {:parent, github: "sasa1977/parent"},

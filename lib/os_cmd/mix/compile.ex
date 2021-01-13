@@ -1,4 +1,5 @@
 defmodule Mix.Tasks.Compile.OsCmd do
+  @moduledoc false
   use Mix.Task.Compiler
 
   @recursive true

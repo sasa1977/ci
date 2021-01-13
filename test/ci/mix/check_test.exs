@@ -10,6 +10,8 @@ defmodule Mix.Tasks.Ci.CheckTest do
     assert_receive {:command, "mix test"}
     assert_receive {:command, "mix format --check-formatted"}
     assert_receive {:command, "mix dialyzer"}
+    assert_receive {:command, "mix docs"}
+    refute_receive {:command, _}
   end
 
   test "reports error" do

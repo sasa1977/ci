@@ -213,7 +213,7 @@ defmodule OsCmdTest do
       test "crashes on handler crash" do
         Process.flag(:trap_exit, true)
 
-        assert {:error, {%RuntimeError{message: "foo"}, _stacktrace}, "1\n"} =
+        assert {:error, %OsCmd.Error{message: "command failed"}} =
                  OsCmd.run(~s/bash -c "echo 1; sleep 999999999"/,
                    handler: &with({:output, _} <- &1, do: raise("foo"))
                  )
@@ -257,7 +257,8 @@ defmodule OsCmdTest do
       end
 
       test "returns error if the program fails" do
-        assert OsCmd.run(~s/bash -c "echo 1; exit 2"/) == {:error, 2, "1\n"}
+        assert OsCmd.run(~s/bash -c "echo 1; exit 2"/) ==
+                 {:error, %OsCmd.Error{message: "command failed", exit_status: 2, output: "1\n"}}
       end
     end
   end
@@ -265,7 +266,9 @@ defmodule OsCmdTest do
   describe "expect" do
     test "returns output and exit status" do
       OsCmd.expect(fn _command, _opts -> {:ok, 1, "foo"} end)
-      assert OsCmd.run("echo 1") == {:error, 1, "foo"}
+
+      assert OsCmd.run("echo 1") ==
+               {:error, %OsCmd.Error{exit_status: 1, message: "command failed", output: "foo"}}
     end
 
     test "uses fake from the closest ancestor" do
@@ -280,7 +283,8 @@ defmodule OsCmdTest do
         end)
         |> Task.await()
 
-      assert result == {:error, 1, "bar"}
+      assert result ==
+               {:error, %OsCmd.Error{exit_status: 1, message: "command failed", output: "bar"}}
     end
 
     test "uses allowances" do
