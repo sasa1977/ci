@@ -30,9 +30,7 @@ defmodule OsCmdTest do
       end
 
       test "can use pty" do
-        pid = start_cmd!("echo 1", notify: self(), pty: true)
-        assert_receive {^pid, {:output, "1\r\n"}}
-        assert_receive {^pid, {:stopped, 0}}
+        assert OsCmd.run("echo 1", pty: true) == {:ok, "1\r\n"}
       end
 
       test "inherits environment" do
