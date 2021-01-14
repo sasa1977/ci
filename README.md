@@ -127,3 +127,7 @@ Except for the `ci.init` mix task, no special code exists in the `Ci` namespace.
 - [ ] Docker support (managing docker images, managed execution of docker containers)
 - [ ] VCS wrappers (git, ...)
 - [ ] SCM platform clients (e.g. reacting to GitHub events)
+
+## License
+
+[MIT](LICENSE)

@@ -41,7 +41,7 @@ defmodule Ci.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md"],
+      extras: ["README.md", "LICENSE"],
       groups_for_modules: [
         Job: ~r/Job((\..+)|$)/
       ]
