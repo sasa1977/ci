@@ -31,7 +31,7 @@ defmodule Ci.MixProject do
       {:ex_doc, "~> 0.23", only: :dev},
       {:mox, "~> 1.0"},
       {:nimble_parsec, "~> 1.1"},
-      {:parent, github: "sasa1977/parent"},
+      {:parent, "~> 0.12.0"},
       {:telemetry, "~> 0.4"}
     ]
   end
