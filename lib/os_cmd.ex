@@ -303,6 +303,7 @@ defmodule OsCmd do
   Returns a specification for running the command as a `Job` action.
 
   The corresponding action will return `{:ok, output} | {:error, %OsCmdError{}}`
+  See `Job.start_action/2` for details.
   """
   @spec action(String.t(), [start_opt | Job.action_opt()]) :: Job.action()
   def action(cmd, opts \\ []) do
