@@ -10,7 +10,8 @@ defmodule Ci.MixProject do
       deps: deps(),
       compilers: Mix.compilers() ++ [:os_cmd],
       preferred_cli_env: preferred_cli_env(),
-      dialyzer: dialyzer()
+      dialyzer: dialyzer(),
+      docs: docs()
     ]
   end
 
@@ -36,4 +37,14 @@ defmodule Ci.MixProject do
     do: [dialyzer: :test]
 
   defp dialyzer, do: [plt_add_apps: [:mix]]
+
+  defp docs do
+    [
+      main: "readme",
+      extras: ["README.md"],
+      groups_for_modules: [
+        Job: ~r/Job((\..+)|$)/
+      ]
+    ]
+  end
 end
