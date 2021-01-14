@@ -1,5 +1,8 @@
 # CI
 
+[![hex.pm](https://img.shields.io/hexpm/v/ci.svg?style=flat-square)](https://hex.pm/packages/ci)
+[![hexdocs.pm](https://img.shields.io/badge/docs-latest-green.svg?style=flat-square)](https://hexdocs.pm/ci/)
+
 CI/CD toolkit as an Elixir library.
 
 ## Status
@@ -71,8 +74,8 @@ end)
 
     defp deps do
       [
-        {:ci, github: "sasa1977/ci"},
-        ...
+        {:ci, "~> 0.1.0"},
+        # ...
       ]
     end
     ```

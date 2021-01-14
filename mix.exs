@@ -1,16 +1,19 @@
 defmodule Ci.MixProject do
   use Mix.Project
 
+  @version "0.1.0"
+
   def project do
     [
       app: :ci,
-      version: "0.1.0",
+      version: @version,
       elixir: "~> 1.11",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       compilers: Mix.compilers() ++ [:os_cmd],
       preferred_cli_env: preferred_cli_env(),
       dialyzer: dialyzer(),
+      package: package(),
       docs: docs()
     ]
   end
@@ -41,10 +44,24 @@ defmodule Ci.MixProject do
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "LICENSE"],
-      groups_for_modules: [
-        Job: ~r/Job((\..+)|$)/
-      ]
+      extras: ["README.md", "CHANGELOG.md", "LICENSE"],
+      groups_for_modules: [Job: ~r/Job((\..+)|$)/],
+      source_ref: @version
+    ]
+  end
+
+  defp package() do
+    [
+      description: "CI/CD toolkit as an Elixir library",
+      maintainers: ["Saša Jurić"],
+      licenses: ["MIT"],
+      links: %{
+        "Github" => "https://github.com/sasa1977/ci",
+        "Changelog" =>
+          "https://github.com/sasa1977/ci/blob/#{@version}/CHANGELOG.md##{
+            String.replace(@version, ".", "")
+          }"
+      }
     ]
   end
 end
