@@ -1,4 +1,8 @@
 defmodule Mix.Tasks.Ci.Init do
+  shortdoc = "Generates the mix task for running CI checks."
+  @shortdoc shortdoc
+  @moduledoc shortdoc
+
   use Mix.Task
 
   ci_template_file = Path.join(__DIR__, "ci.ex.eex")
