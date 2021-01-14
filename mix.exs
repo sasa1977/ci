@@ -46,6 +46,7 @@ defmodule Ci.MixProject do
       main: "readme",
       extras: ["README.md", "CHANGELOG.md", "LICENSE"],
       groups_for_modules: [Job: ~r/Job((\..+)|$)/],
+      source_url: "https://github.com/sasa1977/ci/",
       source_ref: @version
     ]
   end
