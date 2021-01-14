@@ -248,13 +248,7 @@ defmodule OsCmd do
     caller = self()
     start_arg = {cmd, [handler: &send(caller, {self(), &1})] ++ opts}
 
-    start_fun =
-      case Keyword.fetch(opts, :start) do
-        :error -> fn -> start_link(start_arg) end
-        {:ok, fun} -> fn -> fun.({__MODULE__, start_arg}) end
-      end
-
-    with {:ok, pid} <- start_fun.() do
+    with {:ok, pid} <- start_link(start_arg) do
       try do
         await(pid)
       after
