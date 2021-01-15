@@ -1,6 +1,5 @@
 defmodule JobTest do
-  # sync because of log capture
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   describe "job" do
     test "stops when the given function finishes" do
