@@ -1,6 +1,5 @@
 defmodule Job.PipelineTest do
-  # sync because of log capture
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   alias Job.Pipeline
 
