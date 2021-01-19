@@ -56,6 +56,7 @@ defmodule Ci.MixProject do
       description: "CI/CD toolkit as an Elixir library",
       maintainers: ["Saša Jurić"],
       licenses: ["MIT"],
+      files: ~w(lib priv .formatter.exs mix.exs README* LICENSE* CHANGELOG* ports),
       links: %{
         "Github" => "https://github.com/sasa1977/ci",
         "Changelog" =>
