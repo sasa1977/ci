@@ -1,2 +1,6 @@
 /os_cmd
 /pty
+
+node.script
+node.rel
+node.boot

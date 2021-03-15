@@ -14,8 +14,39 @@ defmodule Ci.MixProject do
       preferred_cli_env: preferred_cli_env(),
       dialyzer: dialyzer(),
       package: package(),
-      docs: docs()
+      docs: docs(),
+      aliases: aliases()
     ]
+  end
+
+  defp aliases do
+    [
+      compile: [&gen_boot/1, "compile"]
+    ]
+  end
+
+  defp gen_boot(_) do
+    Mix.shell().info("Generating node.rel file")
+
+    apps =
+      [:kernel, :stdlib, :elixir, :compiler]
+      |> Enum.map(&{&1, get_version(&1)})
+
+    rel_spec = {:release, {'node', '0.1.0'}, {:erts, :erlang.system_info(:version)}, apps}
+    File.write!("priv/node.rel", consultable(rel_spec))
+
+    Mix.shell().info("Generating node.boot file")
+    :systools.make_script('priv/node', [:silent])
+  end
+
+  defp consultable(term) do
+    IO.chardata_to_string(:io_lib.format("%% coding: utf-8~n~tp.~n", [term]))
+  end
+
+  defp get_version(app) do
+    path = :code.lib_dir(app)
+    {:ok, [{:application, ^app, properties}]} = :file.consult(Path.join(path, "ebin/#{app}.app"))
+    Keyword.fetch!(properties, :vsn)
   end
 
   def application do
