@@ -43,15 +43,14 @@ defmodule Sidekick do
   defp start_node(sidekick_node, parent_node) do
     :net_kernel.monitor_nodes(true)
     command = start_node_command(sidekick_node, parent_node)
-    Port.open({:spawn, command}, [:stream])
+    port = Port.open({:spawn, command}, [:stream, :exit_status])
 
+    # Note that we're not using a timeout, because sidekick is programmed to connect to this node
+    # or self-terminate if that fails. Therefore, the situation where sidekick is running but not
+    # connected isn't possible.
     receive do
       {:nodeup, ^sidekick_node} -> :ok
-    after
-      5000 ->
-        # Shutdown node if we never received a response
-        Node.spawn(sidekick_node, :init, :stop, [])
-        {:error, :timeout}
+      {^port, {:exit_status, status}} -> {:error, {:node_stopped, status}}
     end
   end
 
