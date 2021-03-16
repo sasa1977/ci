@@ -3,11 +3,10 @@ defmodule Sidekick do
   def start(node_name \\ :docker, children) do
     ensure_distributed!()
 
-    parent_node = Node.self()
     node = node_host_name(node_name)
 
     case Node.ping(node) do
-      :pang -> wait_for_sidekick(node, parent_node, children)
+      :pang -> wait_for_sidekick(node, children)
       :pong -> {:error, "Sidekick node #{node} is already alive"}
     end
   end
@@ -36,11 +35,11 @@ defmodule Sidekick do
     :"#{name}@#{hostname}"
   end
 
-  defp wait_for_sidekick(sidekick_node, parent_node, children) do
+  defp wait_for_sidekick(sidekick_node, children) do
     :net_kernel.monitor_nodes(true)
 
-    with :ok <- start_node(sidekick_node, parent_node) do
-      case call(sidekick_node, Sidekick.Supervisor, :start_link, [parent_node, children]) do
+    with :ok <- start_node(sidekick_node) do
+      case call(sidekick_node, Sidekick.Supervisor, :start_link, [node(), children]) do
         {:ok, pid} ->
           {:ok, sidekick_node, pid}
 
@@ -51,9 +50,9 @@ defmodule Sidekick do
     end
   end
 
-  defp start_node(sidekick_node, parent_node) do
+  defp start_node(sidekick_node) do
     :net_kernel.monitor_nodes(true)
-    command = start_node_command(sidekick_node, parent_node)
+    command = start_node_command(sidekick_node)
     port = Port.open({:spawn, command}, [:stream, :exit_status])
 
     # Note that we're not using a timeout, because sidekick is programmed to connect to this node
@@ -65,7 +64,7 @@ defmodule Sidekick do
     end
   end
 
-  defp start_node_command(sidekick_node, parent_node) do
+  defp start_node_command(sidekick_node) do
     {:ok, command} = :init.get_argument(:progname)
     paths = Enum.join(:code.get_path(), " , ")
 
@@ -79,7 +78,7 @@ defmodule Sidekick do
 
     paths_arg = "-pa #{paths}"
 
-    command_args = "-s Elixir.Sidekick start_sidekick #{parent_node}"
+    command_args = "-s Elixir.Sidekick start_sidekick #{node()}"
 
     args = "#{base_args} #{boot_file_args} #{cookie_arg} #{paths_arg} #{command_args}"
 
