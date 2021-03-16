@@ -29,12 +29,10 @@ defmodule Sidekick do
       |> Base.decode32!(padding: false)
       |> :erlang.binary_to_term()
 
-    with {:ok, _} <- Application.ensure_all_started(:elixir),
-         {:ok, _} <- Application.ensure_all_started(:parent),
-         {:ok, _} <- Sidekick.Supervisor.start_link(parent_node, children),
-         true <- Node.connect(parent_node),
-         do: :ok,
-         else: (_ -> System.stop())
+    {:ok, _} = Application.ensure_all_started(:elixir)
+    {:ok, _} = Application.ensure_all_started(:parent)
+    {:ok, _} = Sidekick.Supervisor.start_link(parent_node, children)
+    true = Node.connect(parent_node)
   end
 
   defp hostname do
