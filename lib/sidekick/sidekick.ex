@@ -26,7 +26,7 @@ defmodule Sidekick do
   @doc false
   def sidekick_init([parent_node]) do
     if Node.connect(parent_node) in [false, :ignored],
-      do: :init.stop()
+      do: System.stop()
   end
 
   defp hostname do
