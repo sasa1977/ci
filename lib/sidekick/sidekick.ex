@@ -62,7 +62,14 @@ defmodule Sidekick do
   defp start_node_command(sidekick_node, children) do
     {:ok, command} = :init.get_argument(:progname)
 
-    base_args = "-noinput -name #{sidekick_node}"
+    name_arg =
+      case :net_kernel.longnames() do
+        true -> "-name #{sidekick_node}"
+        false -> "-sname #{sidekick_node}"
+        _ -> raise "not in distributed mode"
+      end
+
+    base_args = "-noinput #{name_arg}"
 
     priv_dir = :code.priv_dir(:ci)
     boot_file_args = "-boot #{priv_dir}/node"
