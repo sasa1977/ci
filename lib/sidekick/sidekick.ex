@@ -3,7 +3,7 @@ defmodule Sidekick do
   def start(node_name \\ :docker, children) do
     ensure_distributed!()
 
-    node = node_host_name(node_name)
+    node = :"#{node_name}@#{hostname()}"
 
     case Node.ping(node) do
       :pang -> wait_for_sidekick(node, children)
@@ -30,9 +30,9 @@ defmodule Sidekick do
       do: :init.stop()
   end
 
-  defp node_host_name(name) do
-    hostname = Node.self() |> Atom.to_string() |> String.split("@") |> List.last()
-    :"#{name}@#{hostname}"
+  defp hostname do
+    [_name, hostname] = String.split("#{node()}", "@", parts: 2)
+    hostname
   end
 
   defp wait_for_sidekick(sidekick_node, children) do
