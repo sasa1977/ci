@@ -1,6 +1,6 @@
 defmodule Sidekick do
   @spec start(atom, [{atom, any}]) :: {:error, any} | {:ok, atom, pid}
-  def start(node_name \\ :docker, children \\ [{Ci.Docker, []}]) do
+  def start(node_name \\ :docker, children) do
     parent_node = Node.self()
     node = node_host_name(node_name)
 
@@ -10,17 +10,12 @@ defmodule Sidekick do
     end
   end
 
-  @spec call(atom, atom, atom, list) :: any
-  def call(name \\ :docker, module, function, args) do
-    :rpc.block_call(node_host_name(name), module, function, args)
-  end
-
-  @spec cast(atom, atom, atom, list) :: true
-  def cast(name \\ :docker, module, function, args) do
-    :rpc.cast(node_host_name(name), module, function, args)
+  defp call(node, module, function, args) do
+    :rpc.block_call(node, module, function, args)
   end
 
   @spec start_sidekick([node]) :: :ok
+  @doc false
   def start_sidekick([parent_node]) do
     Node.connect(parent_node)
     :ok
@@ -40,9 +35,9 @@ defmodule Sidekick do
       {:nodeup, ^sidekick_node} ->
         # wait for node to really be up
         # TODO deal with this in a better way
-        :timer.sleep(500)
+        Process.sleep(500)
 
-        case call(:docker, Sidekick.Supervisor, :start_link, [[parent_node, children]]) do
+        case call(sidekick_node, Sidekick.Supervisor, :start_link, [parent_node, children]) do
           {:ok, pid} ->
             {:ok, sidekick_node, pid}
 

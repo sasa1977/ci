@@ -45,7 +45,10 @@ defmodule Ci.MixProject do
 
   defp get_version(app) do
     path = :code.lib_dir(app)
-    {:ok, [{:application, ^app, properties}]} = :file.consult(Path.join(path, "ebin/#{app}.app"))
+
+    {:ok, [{:application, ^app, properties}]} =
+      :file.consult(Path.join([path, "ebin/#{app}.app"]))
+
     Keyword.fetch!(properties, :vsn)
   end
 
