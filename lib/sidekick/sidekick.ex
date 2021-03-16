@@ -22,7 +22,7 @@ defmodule Sidekick do
   end
 
   @doc false
-  def start_sidekick([parent_node]) do
+  def sidekick_init([parent_node]) do
     if Node.connect(parent_node) in [false, :ignored],
       do: :init.stop()
   end
@@ -66,7 +66,7 @@ defmodule Sidekick do
 
     paths_args = :code.get_path() |> Enum.map(&"-pa #{&1}") |> Enum.join(" ")
 
-    command_args = "-s Elixir.Sidekick start_sidekick #{node()}"
+    command_args = "-s Elixir.Sidekick sidekick_init #{node()}"
 
     args = "#{base_args} #{boot_file_args} #{cookie_arg} #{paths_args} #{command_args}"
 
