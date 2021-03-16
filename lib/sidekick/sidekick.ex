@@ -17,8 +17,8 @@ defmodule Sidekick do
   @spec start_sidekick([node]) :: :ok
   @doc false
   def start_sidekick([parent_node]) do
-    Node.connect(parent_node)
-    :ok
+    if Node.connect(parent_node) in [false, :ignored],
+      do: :init.stop()
   end
 
   defp node_host_name(name) do
