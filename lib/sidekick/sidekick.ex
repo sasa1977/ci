@@ -5,9 +5,10 @@ defmodule Sidekick do
 
     node = :"#{node_name}@#{hostname()}"
 
-    case Node.ping(node) do
-      :pang -> wait_for_sidekick(node, children)
-      :pong -> {:error, "Sidekick node #{node} is already alive"}
+    if Node.ping(node) == :pong do
+      {:error, :already_started}
+    else
+      with :ok <- start_node(node), do: start_remote_supervisor(node, children)
     end
   end
 
@@ -18,10 +19,6 @@ defmodule Sidekick do
       {:ok, _pid} -> :ok
       {:error, {:already_started, _pid}} -> :ok
     end
-  end
-
-  defp call(node, module, function, args) do
-    :rpc.block_call(node, module, function, args)
   end
 
   @doc false
@@ -35,18 +32,10 @@ defmodule Sidekick do
     hostname
   end
 
-  defp wait_for_sidekick(sidekick_node, children) do
-    :net_kernel.monitor_nodes(true)
-
-    with :ok <- start_node(sidekick_node) do
-      case call(sidekick_node, Sidekick.Supervisor, :start_link, [node(), children]) do
-        {:ok, pid} ->
-          {:ok, sidekick_node, pid}
-
-        {:error, error} ->
-          Node.spawn(sidekick_node, :init, :stop, [])
-          {:error, error}
-      end
+  defp start_remote_supervisor(sidekick_node, children) do
+    case :rpc.block_call(sidekick_node, Sidekick.Supervisor, :start_link, [node(), children]) do
+      {:ok, _pid} -> :ok
+      other -> {:error, other}
     end
   end
 
