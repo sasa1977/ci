@@ -1,8 +1,7 @@
 defmodule SidekickTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: false
 
-  test "foo" do
-    Sidekick.start([]) |> IO.inspect()
-    assert_receive :foo
+  test "starts a remote node" do
+    assert Sidekick.start([]) == :ok
   end
 end
