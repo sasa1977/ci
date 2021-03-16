@@ -1,12 +1,23 @@
 defmodule Sidekick do
   @spec start(atom, [{atom, any}]) :: {:error, any} | {:ok, atom, pid}
   def start(node_name \\ :docker, children) do
+    ensure_distributed!()
+
     parent_node = Node.self()
     node = node_host_name(node_name)
 
     case Node.ping(node) do
       :pang -> wait_for_sidekick(node, parent_node, children)
       :pong -> {:error, "Sidekick node #{node} is already alive"}
+    end
+  end
+
+  defp ensure_distributed! do
+    node_name = :crypto.strong_rand_bytes(16) |> Base.encode32(padding: false, case: :lower)
+
+    case :net_kernel.start([:"#{node_name}@127.0.0.1"]) do
+      {:ok, _pid} -> :ok
+      {:error, {:already_started, _pid}} -> :ok
     end
   end
 
