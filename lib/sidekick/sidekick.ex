@@ -55,7 +55,6 @@ defmodule Sidekick do
 
   defp start_node_command(sidekick_node) do
     {:ok, command} = :init.get_argument(:progname)
-    paths = Enum.join(:code.get_path(), " , ")
 
     base_args = "-noinput -name #{sidekick_node}"
 
@@ -65,11 +64,11 @@ defmodule Sidekick do
     cookie = Node.get_cookie()
     cookie_arg = "-setcookie #{cookie}"
 
-    paths_arg = "-pa #{paths}"
+    paths_args = :code.get_path() |> Enum.map(&"-pa #{&1}") |> Enum.join(" ")
 
     command_args = "-s Elixir.Sidekick start_sidekick #{node()}"
 
-    args = "#{base_args} #{boot_file_args} #{cookie_arg} #{paths_arg} #{command_args}"
+    args = "#{base_args} #{boot_file_args} #{cookie_arg} #{paths_args} #{command_args}"
 
     "#{command} #{args}"
   end
