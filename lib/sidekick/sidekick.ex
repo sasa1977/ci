@@ -27,23 +27,26 @@ defmodule Sidekick do
 
   defp wait_for_sidekick(sidekick_node, parent_node, children) do
     :net_kernel.monitor_nodes(true)
+
+    with :ok <- start_node(sidekick_node, parent_node) do
+      case call(sidekick_node, Sidekick.Supervisor, :start_link, [parent_node, children]) do
+        {:ok, pid} ->
+          {:ok, sidekick_node, pid}
+
+        {:error, error} ->
+          Node.spawn(sidekick_node, :init, :stop, [])
+          {:error, error}
+      end
+    end
+  end
+
+  defp start_node(sidekick_node, parent_node) do
+    :net_kernel.monitor_nodes(true)
     command = start_node_command(sidekick_node, parent_node)
     Port.open({:spawn, command}, [:stream])
 
     receive do
-      {:nodeup, ^sidekick_node} ->
-        # wait for node to really be up
-        # TODO deal with this in a better way
-        Process.sleep(500)
-
-        case call(sidekick_node, Sidekick.Supervisor, :start_link, [parent_node, children]) do
-          {:ok, pid} ->
-            {:ok, sidekick_node, pid}
-
-          {:error, error} ->
-            Node.spawn(sidekick_node, :init, :stop, [])
-            {:error, error}
-        end
+      {:nodeup, ^sidekick_node} -> :ok
     after
       5000 ->
         # Shutdown node if we never received a response
