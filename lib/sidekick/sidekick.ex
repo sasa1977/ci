@@ -1,5 +1,5 @@
 defmodule Sidekick do
-  @spec start(atom, [{atom, any}]) :: {:error, any} | {:ok, atom, pid}
+  @spec start(atom, [{atom, any}]) :: {:error, any} | :ok
   def start(node_name \\ :docker, children) do
     ensure_distributed!()
 
