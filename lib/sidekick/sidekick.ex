@@ -25,8 +25,11 @@ defmodule Sidekick do
 
   @doc false
   def sidekick_init([parent_node]) do
-    if Node.connect(parent_node) in [false, :ignored],
-      do: System.stop()
+    with {:ok, _} <- Application.ensure_all_started(:elixir),
+         {:ok, _} <- Application.ensure_all_started(:parent),
+         true <- Node.connect(parent_node),
+         do: :ok,
+         else: (_ -> System.stop())
   end
 
   defp hostname do
