@@ -13,6 +13,8 @@ defmodule Sidekick do
   end
 
   defp ensure_distributed! do
+    System.cmd("epmd", ["-daemon"])
+
     node_name = :crypto.strong_rand_bytes(16) |> Base.encode32(padding: false, case: :lower)
 
     case :net_kernel.start([:"#{node_name}@127.0.0.1"]) do
