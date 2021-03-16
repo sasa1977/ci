@@ -5,11 +5,9 @@ defmodule Sidekick do
 
     node = :"#{node_name}@#{hostname()}"
 
-    if Node.ping(node) == :pong do
-      {:error, :already_started}
-    else
-      with :ok <- start_node(node), do: start_remote_supervisor(node, children)
-    end
+    if Node.ping(node) == :pong,
+      do: {:error, :already_started},
+      else: start_node(node, children)
   end
 
   defp ensure_distributed! do
@@ -24,9 +22,16 @@ defmodule Sidekick do
   end
 
   @doc false
-  def sidekick_init([parent_node]) do
+  def sidekick_init([encoded_input]) do
+    {parent_node, children} =
+      encoded_input
+      |> to_string()
+      |> Base.decode32!(padding: false)
+      |> :erlang.binary_to_term()
+
     with {:ok, _} <- Application.ensure_all_started(:elixir),
          {:ok, _} <- Application.ensure_all_started(:parent),
+         {:ok, _} <- Sidekick.Supervisor.start_link(parent_node, children),
          true <- Node.connect(parent_node),
          do: :ok,
          else: (_ -> System.stop())
@@ -37,16 +42,9 @@ defmodule Sidekick do
     hostname
   end
 
-  defp start_remote_supervisor(sidekick_node, children) do
-    case :rpc.block_call(sidekick_node, Sidekick.Supervisor, :start_link, [node(), children]) do
-      {:ok, _pid} -> :ok
-      other -> {:error, other}
-    end
-  end
-
-  defp start_node(sidekick_node) do
+  defp start_node(sidekick_node, children) do
     :net_kernel.monitor_nodes(true)
-    command = start_node_command(sidekick_node)
+    command = start_node_command(sidekick_node, children)
     port = Port.open({:spawn, command}, [:stream, :exit_status])
 
     # Note that we're not using a timeout, because sidekick is programmed to connect to this node
@@ -58,7 +56,7 @@ defmodule Sidekick do
     end
   end
 
-  defp start_node_command(sidekick_node) do
+  defp start_node_command(sidekick_node, children) do
     {:ok, command} = :init.get_argument(:progname)
 
     base_args = "-noinput -name #{sidekick_node}"
@@ -71,7 +69,8 @@ defmodule Sidekick do
 
     paths_args = :code.get_path() |> Enum.map(&"-pa #{&1}") |> Enum.join(" ")
 
-    command_args = "-s Elixir.Sidekick sidekick_init #{node()}"
+    encoded_arg = {node(), children} |> :erlang.term_to_binary() |> Base.encode32(padding: false)
+    command_args = "-run Elixir.Sidekick sidekick_init #{encoded_arg}"
 
     args = "#{base_args} #{boot_file_args} #{cookie_arg} #{paths_args} #{command_args}"
 
