@@ -14,7 +14,6 @@ defmodule Sidekick do
     :rpc.block_call(node, module, function, args)
   end
 
-  @spec start_sidekick([node]) :: :ok
   @doc false
   def start_sidekick([parent_node]) do
     if Node.connect(parent_node) in [false, :ignored],
