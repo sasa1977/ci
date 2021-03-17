@@ -35,7 +35,7 @@ defmodule Sidekick do
     parent_node = node(caller)
     true = Node.connect(parent_node)
 
-    {:ok, _} = Sidekick.Supervisor.start_link(parent_node, children)
+    {:ok, _} = Sidekick.Supervisor.start(parent_node, children)
 
     send(caller, {__MODULE__, :initialized})
   end

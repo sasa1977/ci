@@ -2,15 +2,20 @@ defmodule Sidekick.Supervisor do
   use Parent.GenServer
   require Logger
 
-  @spec start_link(atom, [...]) :: GenServer.on_start()
-  def start_link(parent_node, children) do
-    Parent.GenServer.start_link(__MODULE__, [parent_node, children], name: __MODULE__)
+  @spec start(atom, [...]) :: GenServer.on_start()
+  def start(parent_node, children) do
+    # We're calling `start_link` but under the hood this will behave like `start`. See `init/1` for details.
+    Parent.GenServer.start_link(__MODULE__, {self(), parent_node, children}, name: __MODULE__)
   end
 
   @impl GenServer
-  def init([parent_node, children]) do
+  def init({starter_process, parent_node, children}) do
     Node.monitor(parent_node, true)
     Parent.start_all_children!(children)
+
+    # We don't want to stop when the starter process stops, so we're unlinking from it.
+    Process.unlink(starter_process)
+
     {:ok, nil}
   end
 
