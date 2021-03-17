@@ -2,7 +2,7 @@ defmodule Sidekick.Supervisor do
   use Parent.GenServer
   require Logger
 
-  @spec start(atom, [...]) :: GenServer.on_start()
+  @spec start(node, [Parent.child_spec()]) :: GenServer.on_start()
   def start(parent_node, children) do
     # We're calling `start_link` but under the hood this will behave like `start`. See `init/1` for details.
     Parent.GenServer.start_link(__MODULE__, {self(), parent_node, children}, name: __MODULE__)
