@@ -1,5 +1,5 @@
 defmodule Sidekick do
-  @spec start(atom, [{atom, any}]) :: {:error, any} | :ok
+  @spec start(atom, [Parent.child_spec()]) :: :ok | {:error, :already_started | :boot_error}
   def start(node_name \\ :docker, children) do
     ensure_distributed!()
 
@@ -55,7 +55,7 @@ defmodule Sidekick do
     receive do
       # {:nodeup, ^sidekick_node} -> :ok
       {__MODULE__, :initialized} -> :ok
-      {^port, {:exit_status, status}} -> {:error, {:node_stopped, status}}
+      {^port, {:exit_status, _status}} -> {:error, :boot_error}
     end
   end
 
