@@ -35,7 +35,7 @@ defmodule Sidekick do
     parent_node = node(caller)
     true = Node.connect(parent_node)
 
-    {:ok, _} = Sidekick.Supervisor.start(parent_node, children)
+    {:ok, _} = Sidekick.Supervisor.start(caller, children)
 
     send(caller, {__MODULE__, :initialized})
   end
@@ -46,20 +46,17 @@ defmodule Sidekick do
   end
 
   defp start_node(sidekick_node, children) do
-    command = start_node_command(sidekick_node, children)
-    port = Port.open({:spawn, command}, [:stream, :exit_status])
+    {:ok, port_pid} = Sidekick.Port.start_link(self())
+    command = start_node_command(sidekick_node, port_pid, children)
+    Sidekick.Port.open(port_pid, command)
 
-    # Note that we're not using a timeout, because sidekick is programmed to connect to this node
-    # or self-terminate if that fails. Therefore, the situation where sidekick is running but not
-    # connected isn't possible.
     receive do
-      # {:nodeup, ^sidekick_node} -> :ok
-      {__MODULE__, :initialized} -> :ok
-      {^port, {:exit_status, _status}} -> {:error, :boot_error}
+      {__MODULE__, :initialized} -> {:ok, port_pid}
+      :port_closed -> {:error, :boot_error}
     end
   end
 
-  defp start_node_command(sidekick_node, children) do
+  defp start_node_command(sidekick_node, parent_pid, children) do
     {:ok, command} = :init.get_argument(:progname)
 
     name_arg =
@@ -79,7 +76,9 @@ defmodule Sidekick do
 
     paths_args = :code.get_path() |> Enum.map(&"-pa #{&1}") |> Enum.join(" ")
 
-    encoded_arg = {self(), children} |> :erlang.term_to_binary() |> Base.encode32(padding: false)
+    encoded_arg =
+      {parent_pid, children} |> :erlang.term_to_binary() |> Base.encode32(padding: false)
+
     command_args = "-run Elixir.Sidekick sidekick_init #{encoded_arg}"
 
     args = "#{base_args} #{boot_file_args} #{cookie_arg} #{paths_args} #{command_args}"

@@ -2,29 +2,27 @@ defmodule Sidekick.Supervisor do
   use Parent.GenServer
   require Logger
 
-  @spec start(node, [Parent.child_spec()]) :: GenServer.on_start()
-  def start(parent_node, children) do
-    # We're calling `start_link` but under the hood this will behave like `start`. See `init/1` for details.
-    Parent.GenServer.start_link(__MODULE__, {self(), parent_node, children}, name: __MODULE__)
+  @spec start(atom, [Parent.child_spec()]) :: GenServer.on_start()
+  def start(owner_process, children) do
+    # We're calling `start_link` but under the hood this will link the process to the owner process and not the caller
+    Parent.GenServer.start_link(__MODULE__, {self(), owner_process, children}, name: __MODULE__)
   end
 
   @impl GenServer
-  def init({starter_process, parent_node, children}) do
-    Node.monitor(parent_node, true)
+  def init({caller_process, owner_process, children}) do
     Parent.start_all_children!(children)
 
-    # We don't want to stop when the starter process stops, so we're unlinking from it.
-    Process.unlink(starter_process)
+    Process.unlink(caller_process)
+    Process.link(owner_process)
 
-    {:ok, nil}
+    {:ok, %{owner_pid: owner_process}}
   end
 
-  @impl GenServer
-  def handle_info({:nodedown, _node}, state) do
-    {:stop, :normal, state}
+  def handle_info({:EXIT, pid, _reason}, state) do
+    if pid == state.owner_pid,
+      do: {:stop, :normal, state},
+      else: {:noreply, state}
   end
-
-  def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
 
   @impl GenServer
   def terminate(_reason, _state) do
