@@ -12,6 +12,14 @@ defmodule Sidekick do
       else: GenServer.start_link(__MODULE__, {node, children})
   end
 
+  @spec child_spec({atom, [Parent.child_spec()]}) :: Supervisor.child_spec()
+  def child_spec({node_name, children}) do
+    %{
+      id: {__MODULE__, node_name},
+      start: {__MODULE__, :start_link, [node_name, children]}
+    }
+  end
+
   @impl GenServer
   def init({node, children}) do
     command = start_node_command(node, children)
