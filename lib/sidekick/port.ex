@@ -1,4 +1,6 @@
 defmodule Sidekick.Port do
+  @moduledoc false
+
   use GenServer
   require Logger
 
@@ -10,15 +12,18 @@ defmodule Sidekick.Port do
     GenServer.cast(pid, {:open, command})
   end
 
+  @impl GenServer
   def init([caller]) do
     {:ok, {caller}}
   end
 
+  @impl GenServer
   def handle_cast({:open, command}, {caller}) do
     port = Port.open({:spawn, command}, [:stream, :exit_status])
     {:noreply, {port, caller}}
   end
 
+  @impl GenServer
   def handle_info({port, {:data, data}}, {port, caller}) do
     Logger.debug("Port got message #{inspect(data)}")
     {:noreply, {port, caller}}
