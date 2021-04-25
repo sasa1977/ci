@@ -4,7 +4,7 @@ defmodule SidekickTest do
   test "starts a remote node" do
     :net_kernel.monitor_nodes(true)
     # Sidekick node should exist
-    {:ok, _pid} = Sidekick.start(:test, [])
+    {:ok, _pid} = Sidekick.start_link(:test, [])
     assert_receive {:nodeup, :"test@127.0.0.1"}, 2000
 
     # Supervisor should be started on the Node
@@ -19,7 +19,7 @@ defmodule SidekickTest do
 
   test "shutting call process should kill sidekick" do
     :net_kernel.monitor_nodes(true)
-    {:ok, pid} = Sidekick.start(:test, [])
+    {:ok, pid} = Sidekick.start_link(:test, [])
 
     assert_receive {:nodeup, :"test@127.0.0.1"}, 2000
 

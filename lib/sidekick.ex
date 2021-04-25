@@ -2,8 +2,8 @@ defmodule Sidekick do
   use GenServer
   require Logger
 
-  @spec start(atom, [Parent.child_spec()]) :: :ok | {:error, :already_started | :boot_error}
-  def start(node_name, children) do
+  @spec start_link(atom, [Parent.child_spec()]) :: GenServer.on_start()
+  def start_link(node_name, children) do
     ensure_distributed!()
     node = :"#{node_name}@#{hostname()}"
 
