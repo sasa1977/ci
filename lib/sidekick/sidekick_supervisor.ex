@@ -2,7 +2,7 @@ defmodule Sidekick.Supervisor do
   use Parent.GenServer
   require Logger
 
-  @spec start(atom, [Parent.child_spec()]) :: GenServer.on_start()
+  @spec start(pid(), [Parent.child_spec()]) :: GenServer.on_start()
   def start(owner_process, children) do
     # We're calling `start_link` but under the hood this will link the process to the owner process and not the caller
     Parent.GenServer.start_link(__MODULE__, {self(), owner_process, children}, name: __MODULE__)
