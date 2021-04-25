@@ -2,29 +2,34 @@ defmodule SidekickTest do
   use ExUnit.Case, async: false
 
   test "starts a remote node" do
-    :net_kernel.monitor_nodes(true)
-
-    start_supervised!({Sidekick, {:test, []}})
-    assert_receive {:nodeup, :"test@127.0.0.1"}, 2000
+    node = start_node!().node
 
     # Supervisor should be started on the Node
-    assert :rpc.call(:"test@127.0.0.1", Process, :whereis, [Sidekick.Supervisor]) != nil
+    assert :rpc.call(node, Process, :whereis, [Sidekick.Supervisor]) != nil
 
     # Shutting down the supervisor should close down the node
-    Node.monitor(:"test@127.0.0.1", true)
-    Supervisor.stop({Sidekick.Supervisor, :"test@127.0.0.1"})
-    assert_receive {:nodedown, :"test@127.0.0.1"}, 2000
+    Supervisor.stop({Sidekick.Supervisor, node})
+
+    assert_receive {:nodedown, ^node}, 2000
     assert Node.list() == []
   end
 
   test "shutting call process should kill sidekick" do
-    :net_kernel.monitor_nodes(true)
-
-    pid = start_supervised!({Sidekick, {:test, []}})
-    assert_receive {:nodeup, :"test@127.0.0.1"}, 2000
-
+    %{pid: pid, node: node} = start_node!()
     GenServer.stop(pid)
 
-    assert_receive {:nodedown, :"test@127.0.0.1"}, 5000
+    assert_receive {:nodedown, ^node}, 5000
+  end
+
+  defp start_node!(children \\ []) do
+    :net_kernel.monitor_nodes(true)
+
+    node_name = :"test_#{System.unique_integer([:positive, :monotonic])}"
+    pid = start_supervised!({Sidekick, {node_name, children}})
+
+    node = :"#{node_name}@127.0.0.1"
+    assert_receive {:nodeup, ^node}, 2000
+
+    %{pid: pid, node: node}
   end
 end
