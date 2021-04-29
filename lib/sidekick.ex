@@ -1,13 +1,45 @@
 defmodule Sidekick do
-  @spec start(atom, [Parent.child_spec()]) :: :ok | {:error, :already_started | :boot_error}
-  def start(node_name, children) do
-    ensure_distributed!()
+  use GenServer
+  require Logger
 
+  @spec start_link(atom, [Parent.child_spec()]) :: GenServer.on_start()
+  def start_link(node_name, children) do
+    ensure_distributed!()
     node = :"#{node_name}@#{hostname()}"
 
     if Node.ping(node) == :pong,
       do: {:error, :already_started},
-      else: start_node(node, children)
+      else: GenServer.start_link(__MODULE__, {node, children})
+  end
+
+  @spec child_spec({atom, [Parent.child_spec()]}) :: Supervisor.child_spec()
+  def child_spec({node_name, children}) do
+    %{
+      id: {__MODULE__, node_name},
+      start: {__MODULE__, :start_link, [node_name, children]}
+    }
+  end
+
+  @impl GenServer
+  def init({node, children}) do
+    command = start_node_command(node, children)
+    port = Port.open({:spawn, command}, [:stream, :exit_status])
+
+    receive do
+      {Sidekick, :initialized} -> {:ok, port}
+      {^port, {:exit_status, _status}} -> {:stop, :boot_error}
+    end
+  end
+
+  @impl GenServer
+  def handle_info({port, {:data, data}}, port) do
+    Logger.debug("Port got message #{inspect(data)}")
+    {:noreply, port}
+  end
+
+  def handle_info({port, {:exit_status, reason}}, port) do
+    Logger.debug("Port closed with reason #{reason}")
+    {:stop, :normal, port}
   end
 
   defp ensure_distributed! do
@@ -35,7 +67,7 @@ defmodule Sidekick do
     parent_node = node(caller)
     true = Node.connect(parent_node)
 
-    {:ok, _} = Sidekick.Supervisor.start(parent_node, children)
+    {:ok, _} = Sidekick.Supervisor.start(caller, children)
 
     send(caller, {__MODULE__, :initialized})
   end
@@ -43,20 +75,6 @@ defmodule Sidekick do
   defp hostname do
     [_name, hostname] = String.split("#{node()}", "@", parts: 2)
     hostname
-  end
-
-  defp start_node(sidekick_node, children) do
-    command = start_node_command(sidekick_node, children)
-    port = Port.open({:spawn, command}, [:stream, :exit_status])
-
-    # Note that we're not using a timeout, because sidekick is programmed to connect to this node
-    # or self-terminate if that fails. Therefore, the situation where sidekick is running but not
-    # connected isn't possible.
-    receive do
-      # {:nodeup, ^sidekick_node} -> :ok
-      {__MODULE__, :initialized} -> :ok
-      {^port, {:exit_status, _status}} -> {:error, :boot_error}
-    end
   end
 
   defp start_node_command(sidekick_node, children) do
@@ -82,8 +100,6 @@ defmodule Sidekick do
     encoded_arg = {self(), children} |> :erlang.term_to_binary() |> Base.encode32(padding: false)
     command_args = "-run Elixir.Sidekick sidekick_init #{encoded_arg}"
 
-    args = "#{base_args} #{boot_file_args} #{cookie_arg} #{paths_args} #{command_args}"
-
-    "#{command} #{args}"
+    "#{command} #{base_args} #{boot_file_args} #{cookie_arg} #{paths_args} #{command_args}"
   end
 end
