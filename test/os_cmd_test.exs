@@ -18,7 +18,7 @@ defmodule OsCmdTest do
 
       test "returns error on invalid directory" do
         Process.flag(:trap_exit, true)
-        assert {:error, error} = start_cmd("dir", cd: "/unknown/directory")
+        assert {:error, error} = start_cmd("ls", cd: "/unknown/directory")
         assert error.message =~ "no such file or directory"
       end
 
