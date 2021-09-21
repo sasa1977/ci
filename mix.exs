@@ -32,7 +32,7 @@ defmodule Ci.MixProject do
       {:mox, "~> 1.0"},
       {:nimble_parsec, "~> 1.1"},
       {:parent, "~> 0.12.0"},
-      {:telemetry, "~> 0.4"}
+      {:telemetry, "~> 0.4 or ~> 1.0"}
     ]
   end
 
@@ -60,9 +60,7 @@ defmodule Ci.MixProject do
       links: %{
         "Github" => "https://github.com/sasa1977/ci",
         "Changelog" =>
-          "https://github.com/sasa1977/ci/blob/#{@version}/CHANGELOG.md##{
-            String.replace(@version, ".", "")
-          }"
+          "https://github.com/sasa1977/ci/blob/#{@version}/CHANGELOG.md##{String.replace(@version, ".", "")}"
       }
     ]
   end
