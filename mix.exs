@@ -60,9 +60,7 @@ defmodule Ci.MixProject do
       links: %{
         "Github" => "https://github.com/sasa1977/ci",
         "Changelog" =>
-          "https://github.com/sasa1977/ci/blob/#{@version}/CHANGELOG.md##{
-            String.replace(@version, ".", "")
-          }"
+          "https://github.com/sasa1977/ci/blob/#{@version}/CHANGELOG.md##{String.replace(@version, ".", "")}"
       }
     ]
   end
