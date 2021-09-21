@@ -12,10 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - uses: erlef/setup-elixir@v1
+      - uses: erlef/setup-beam@v1
         with:
-          otp-version: 23.1
-          elixir-version: 1.11.3
+          otp-version: "24.0"
+          elixir-version: "1.12"
 
       - uses: actions/setup-go@v2
         with:
