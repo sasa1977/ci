@@ -29,6 +29,8 @@ defmodule Ci.MixProject do
     [
       {:dialyxir, "~> 1.0", only: :test, runtime: false},
       {:ex_doc, "~> 0.23", only: :dev},
+      # `mox` is required not just in the test environment because CI wraps it to offer some
+      # convenience functions, and in addition, defines a mock module at compilation time.
       {:mox, "~> 1.0"},
       {:nimble_parsec, "~> 1.1"},
       {:parent, "~> 0.12.0"},
