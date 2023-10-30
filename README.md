@@ -65,7 +65,7 @@ end)
 
     - Erlang >= 23
     - Elixir >= 1.11
-    - go >= 1.15
+    - go >= 1.16
 
 2. Add CI as a dependency inside your `mix.exs`:
 
